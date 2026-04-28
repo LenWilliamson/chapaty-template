@@ -1,12 +1,19 @@
 [package]
 name = "chapaty-template"
-version = "1.1.0+2"
+version = "1.1.0+3"
 edition = "2024"
 publish = false
 
 [dependencies]
 anyhow = "1.0"
 chapaty = "1.1.0"
+# chapaty = { path = "../chapaty" }
 chrono = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 tokio = { version = "1.52", features = ["full"] }
+
+# NOTE: For the public template release, swap the `path` dep above for a
+# versioned crates.io pin that matches this template's git tag:
+#   chapaty = "1.1.0"
+# During local development we keep the path dep so this builds
+# against the in-tree chapaty crate.
