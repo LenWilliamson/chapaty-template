@@ -1,0 +1,48 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    name: CI
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: rustfmt, clippy
+
+      - name: "[0/4] Check no local path dependency for chapaty"
+        run: |
+          if grep -E '^chapaty\s*=.*path\s*=' Cargo.toml; then
+            echo ""
+            echo "ERROR: Cargo.toml contains a local path dependency for chapaty."
+            echo "Replace it with a versioned crates.io release: chapaty = \"<version>\""
+            exit 1
+          fi
+
+      - name: "[1/5] cargo fmt --check"
+        run: cargo fmt --all -- --check
+
+      - name: "[2/5] cargo clippy"
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: "[3/5] cargo audit"
+        uses: taiki-e/install-action@cargo-audit
+      - run: cargo audit
+
+      - name: "[4/5] cargo test"
+        run: cargo test --all-features
+
+      - name: "[5/5] cargo build --release"
+        run: cargo build --release
