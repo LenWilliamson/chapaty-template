@@ -41,7 +41,7 @@ async fn main() -> Result<()> {
     let (count, agents) = DemoAgentGrid::baseline(ohlcv)?.build();
 
     println!(">> Evaluating {count} agents in parallel...");
-    // Calling .into_par_iter() directly on the agents Vec an cause rayon to stall for large Vecs. 
+    // Calling .into_par_iter() directly on the agents Vec an cause rayon to stall for large Vecs.
     // Prefere using agents.into_iter().par_bridge(). It is safe and efficient for Vecs.
     let leaderboard = env.evaluate_agents(agents.into_iter().par_bridge(), 100, count as u64)?;
 
