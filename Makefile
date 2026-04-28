@@ -53,8 +53,8 @@ update:
 	@echo ">> [2/3] Syncing visualization script..."
 	curl -fsSL $(TEMPLATE_REPO)/visualization/generate_tearsheet.py -o visualization/generate_tearsheet.py
 	curl -fsSL $(TEMPLATE_REPO)/visualization/requirements.txt      -o visualization/requirements.txt
-	@echo ">> [3/3] Updating chapaty crate..."
-	cargo update -p chapaty
+	@echo ">> [3/3] Updating Rust dependencies..."
+	cargo update
 	@echo ">> Update complete. If your agent fails to compile, paste the error into your LLM or reach out on Discord."
 
 check:
