@@ -41,3 +41,6 @@ target
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Local Cargo overrides
+.cargo/
