@@ -17,7 +17,7 @@ Windows users: Please read the [Windows Users](#windows-users) section before pr
 
 ```bash
 # 1. Clone the template (we use 'ct' as a shorthand directory name)
-git clone --branch v1.1.0 --depth 1 https://github.com/LenWilliamson/chapaty-template.git) ct
+git clone --depth 1 https://github.com/LenWilliamson/chapaty-template.git ct
 cd ct
 
 # 2. Check dependencies (Rust + Python)
