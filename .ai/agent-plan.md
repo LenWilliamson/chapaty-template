@@ -68,9 +68,9 @@ Once approved, build the strategy using the modern Rust (non-`mod.rs`) directory
    ```
 3. **Register the Module:** Append `pub mod <name>;` to `src/agents.rs` (create the file if missing).
 4. **Wire it into `src/main.rs`:**
-   - **Single Agent Evaluation (REQUIRED):** ALWAYS run `env.evaluate_agent()` on a baseline agent first, and export its `journal.csv`. This guarantees that the Python visualization script will succeed and give the user immediate visual feedback.
-   - **Grid Search (Optional/Commented out):** If generating a grid search block, leave it commented out by default with an explanation.
-   - **RAYON STALL WARNING:** When writing grid searches, you **MUST** convert your agent vector into a Rayon parallel iterator using `.into_iter().par_bridge()`. If you use `.into_par_iter()` instead, Rayon will stall for large grids.
+   - **Single Agent Evaluation (REQUIRED):** ALWAYS run `env.evaluate_agent()` on a baseline agent first, and export its reports. This guarantees the Python visualization script succeeds.
+   - **Grid Search (Optional):** Include a grid search block but leave it well-commented.
+   - **RAYON STALL PREVENTION (CRITICAL):** 1. Eagerly allocate your parameters into a `Vec` inside your grid builder before mapping to agents. 2. When passing the agents to `evaluate_agents`, you **MUST** use `.into_iter().par_bridge()`. Do **NOT** use `.into_par_iter()`, as it causes heavy thread stalling in this engine for large grids.
 
 ## Phase 5: Handoff
 

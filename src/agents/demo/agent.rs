@@ -1,9 +1,10 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use itertools::iproduct;
 use serde::Serialize;
 
-use chapaty::prelude::*;
+use chapaty::{gym::GridAxis, prelude::*};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DemoAgent {
@@ -169,5 +170,44 @@ impl Agent for DemoAgent {
         }
 
         Ok(actions)
+    }
+}
+
+pub struct DemoAgentGrid {
+    ohlcv_id: OhlcvId,
+    fast_period: GridAxis,
+    slow_period: GridAxis,
+}
+
+impl DemoAgentGrid {
+    pub fn baseline(ohlcv_id: OhlcvId) -> ChapatyResult<Self> {
+        Ok(Self {
+            ohlcv_id,
+            fast_period: GridAxis::new("10", "30", "5")?,
+            slow_period: GridAxis::new("40", "60", "5")?,
+        })
+    }
+
+    pub fn build(self) -> (usize, Vec<(usize, DemoAgent)>) {
+        let fasts = self.fast_period.generate();
+        let slows = self.slow_period.generate();
+
+        // 1. Eagerly collect valid combinations into a flat Vector
+        let valid_args = iproduct!(fasts, slows)
+            // Example filter: Fast must be less than Slow
+            .filter(|(f, s)| f < s)
+            .collect::<Vec<_>>();
+
+        let total_combinations = valid_args.len();
+        let ohlcv_id = self.ohlcv_id;
+
+        // 2. Map to Agent instances
+        let agents = valid_args
+            .into_iter()
+            .enumerate()
+            .map(|(uid, (fast, slow))| (uid, DemoAgent::new(ohlcv_id, fast as u16, slow as u16)))
+            .collect::<Vec<_>>();
+
+        (total_combinations, agents)
     }
 }

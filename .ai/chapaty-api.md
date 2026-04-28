@@ -175,18 +175,32 @@ journal.trade_stats()?.to_file(cfg)?;
 
 ### Grid Search Evaluation (Parameter Sweeping)
 
-> **CRITICAL: RAYON PARALLEL ITERATION**
-> When using `evaluate_agents`, you **MUST** convert the agent vector into a parallel iterator using `.par_bridge()`. If you use `.into_par_iter()`, Rayon will silently stall and the backtest will hang forever.
+> **CRITICAL: PREVENTING RAYON STALLS**
+>
+> 1. **Eager Allocation:** Use `itertools::iproduct!`, filter valid parameters, and eagerly collect the instantiated agents into a standard `Vec`. Do not return lazy iterators.
+> 2. **Par Bridge:** When passing the `Vec` to `evaluate_agents`, you **MUST** use `agents.into_iter().par_bridge()`. Never use `.into_par_iter()`, as it causes Rayon's work-stealing threads to stall heavily in this specific environment.
 
 ```rust
-// Creating grid axes
-let sl_axis = GridAxis::new("0.5", "1.5", "0.01").unwrap();
+// 1. Grid Builder implementation
+pub fn build(self) -> (usize, Vec<(usize, MyAgent)>) {
+    let sls = self.sl_axis.generate();
+    let tps = self.tp_axis.generate();
 
-// Execution
-let (stream_len, agents_iter) = MyAgentGrid::baseline()?.build();
+    // Eagerly collect into a Vec
+    let agents = iproduct!(sls, tps)
+        .filter(|(sl, tp)| sl < tp) // Filter invalid logic
+        .enumerate()
+        .map(|(uid, (sl, tp))| (uid, MyAgent::new(sl, tp)))
+        .collect::<Vec<_>>();
+
+    (agents.len(), agents)
+}
+
+// 2. Execution in main.rs
+let (stream_len, agents) = MyAgentGrid::baseline()?.build();
 let leaderboard = env.evaluate_agents(
-    // CRITICAL: .par_bridge() MUST BE INCLUDED
-    agents_iter.collect::<Vec<_>>().into_iter().par_bridge(),
+    // CRITICAL: Must use .into_iter().par_bridge()
+    agents.into_iter().par_bridge(),
     100, // top_k to retain
     stream_len as u64,
 )?;

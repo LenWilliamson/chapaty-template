@@ -1,29 +1,28 @@
 use anyhow::{Context, Result};
 use chapaty::prelude::*;
+use rayon::iter::ParallelBridge;
 use std::path::Path;
 
-use crate::agents::demo::DemoAgent;
+use crate::agents::demo::{DemoAgent, DemoAgentGrid};
 
 mod agents;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    println!(">> Loading environment from Hugging Face (first run downloads + caches)...");
+    println!(">> Loading environment from Hugging Face...");
     let mut env = environment().await?;
 
     let ohlcv = ohlcv_id();
-    let mut agent = DemoAgent::new(ohlcv, 20, 50);
-
-    println!(">> Running DemoAgent backtest...");
-    let journal = env.evaluate_agent(&mut agent)?;
-
-    println!(">> Exporting results...");
     let file_cfg = FileConfig::default().with_dir(Path::new("chapaty/reports"));
 
-    // Export the raw journal
-    journal.to_file_sync(&file_cfg)?;
+    // ==========================================
+    // 1. Single Agent Baseline (For Tearsheet)
+    // ==========================================
+    println!(">> Running DemoAgent baseline backtest...");
+    let mut baseline_agent = DemoAgent::new(ohlcv, 20, 50);
+    let journal = env.evaluate_agent(&mut baseline_agent)?;
 
-    // Export the statistics
+    journal.to_file_sync(&file_cfg)?;
     journal.cumulative_returns()?.to_file_sync(&file_cfg)?;
     journal.portfolio_performance()?.to_file_sync(&file_cfg)?;
     journal.trade_stats()?.to_file_sync(&file_cfg)?;
@@ -33,10 +32,21 @@ async fn main() -> Result<()> {
         .into_eod()?
         .to_file_sync(&file_cfg)?;
 
-    println!(">> Wrote chapaty/reports/journal.csv (and companion reports).");
-    println!(
-        ">> Open chapaty/reports/tearsheet.html in a browserto visualize the backtest results."
-    );
+    println!(">> DemoAgent baseline backtest complete.");
+
+    // ==========================================
+    // 2. Parallel Grid Search (Parameter Sweep)
+    // ==========================================
+    println!(">> Building DemoAgent Grid...");
+    let (count, agents) = DemoAgentGrid::baseline(ohlcv)?.build();
+
+    println!(">> Evaluating {count} agents in parallel...");
+    // Calling .into_par_iter() directly on the agents Vec an cause rayon to stall for large Vecs. 
+    // Prefere using agents.into_iter().par_bridge(). It is safe and efficient for Vecs.
+    let leaderboard = env.evaluate_agents(agents.into_iter().par_bridge(), 100, count as u64)?;
+
+    leaderboard.to_file_sync(&file_cfg)?;
+    println!(">> Grid complete. Leaderboard saved.");
 
     Ok(())
 }

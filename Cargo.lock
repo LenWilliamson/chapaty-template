@@ -515,6 +515,8 @@ dependencies = [
  "anyhow",
  "chapaty",
  "chrono",
+ "itertools",
+ "rayon",
  "serde",
  "tokio",
 ]
