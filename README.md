@@ -164,7 +164,7 @@ chapaty-template/
 
 **Community & Support:**
 
-- [Discord][discord]: The fastest way to get help, request data, or post your strategy's PnL in the `#showcase` channel.
+- [Discord][discord]: The fastest way to get help, request data, or post your strategy's PnL in the `#tearsheets` channel.
 
 **Issue Tracking:**
 
