@@ -40,7 +40,7 @@ run:
 	cargo run --release
 	@echo ">> Generating QuantStats tearsheet..."
 	$(VENV_PYTHON) visualization/generate_tearsheet.py
-	@echo ">> Done. Open chapaty/reports/tearsheet.html"
+	@echo ">> Run completed."
 
 update:
 	@echo ">> [1/3] Syncing LLM prompts from $(TEMPLATE_REPO)..."

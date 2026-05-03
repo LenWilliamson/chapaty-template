@@ -183,8 +183,8 @@ impl DemoAgentGrid {
     pub fn baseline(ohlcv_id: OhlcvId) -> ChapatyResult<Self> {
         Ok(Self {
             ohlcv_id,
-            fast_period: GridAxis::new("10", "30", "5")?,
-            slow_period: GridAxis::new("40", "60", "5")?,
+            fast_period: GridAxis::new("10", "30", "1")?,
+            slow_period: GridAxis::new("40", "60", "1")?,
         })
     }
 
