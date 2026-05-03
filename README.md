@@ -7,7 +7,7 @@
 
 > **Welcome to Chapaty!** Trying out a new framework can be frustrating if things break on day one. If you run into setup issues, framework bugs, or missing data, please reach out on [Discord][discord]. We want to ensure a smooth developer experience and will fix framework bugs promptly.
 
-This repository is the fastest way to start building quantitative trading agents in Rust. Designed with a familiar, [**Gym-style API**][gymnasium] (`reset`, `step`, `act`), [`chapaty`][chapaty-crate] evaluates parallel backtests efficiently. This template wires the core `chapaty` library up with an LLM-friendly workflow and an automated QuantStats HTML tearsheet.
+This repository is the fastest way to start building quantitative trading agents in Rust. Designed with a familiar [**Gym-style API**][gymnasium] (`reset`, `step`, `act`), the [`chapaty`][chapaty-crate] crate evaluates parallel backtests efficiently. This template wires the core engine up with an LLM-friendly workflow and an automated QuantStats HTML tearsheet.
 
 **You don't need to be a Rust expert.** Describe your strategy in plain English, and instruct your LLM of choice to generate the Rust code using the provided `AI.md` instructions (see: [Vibe-Coding Workflow](#vibe-coding-workflow)).
 
@@ -97,21 +97,28 @@ Need a specific indicator we don't have? Please open a **Feature Request** on th
 
 ## Staying Updated
 
-Chapaty is evolving. To pull the latest API docs for your LLM and updated visualization scripts without breaking your custom strategies:
+Chapaty is evolving. To pull the latest AI prompts and updated visualization scripts without breaking your custom strategies:
 
 ```bash
 make update
 ```
 
-This updates `AI.md`, `visualization/generate_tearsheet.py`, and runs `cargo update -p chapaty`. Your `src/agents/` directory is left untouched.
+This synchronizes `AI.md`, the entire `.ai/` directory, and the `visualization/` directory with the upstream `main` branch. It then runs a global `cargo update` to fetch the latest patch versions of all Rust dependencies.
+
+> **Warning:** Any manual changes you make inside the `.ai/` or `visualization/` directories will be overwritten when running this command. Your `src/agents/` directory is strictly left untouched.
 
 ## Version Compatibility
 
-This template's git tags mirror the exact `chapaty` crate version it was validated against. Pin your clone to match your desired dependency:
+By default, the `main` branch of this template is always locked to the latest stable release of the `chapaty` core engine.
 
-| Template Tag | `chapaty` Version | Notes  |
-| ------------ | ----------------- | ------ |
-| `v1.1.0`     | `1.1.0`           | Stable |
+If you need to pin your repository to a historical version, you can check out a specific Git tag. We use SemVer build metadata (`+x`) to track template-specific improvements (like LLM prompt updates or Makefile fixes) independently from the core engine.
+
+| Template Tag | Core `chapaty` Version | Notes         |
+| ------------ | ---------------------- | ------------- |
+| `v1.1.2+x`   | `1.1.2`                | Active Stable |
+| `v1.1.0+x`   | `1.1.0`                | Legacy        |
+
+_(Example: Checking out tag `v1.1.2+5` guarantees you are using the 5th iteration of the template designed specifically for `chapaty v1.1.2`.)_
 
 ## Repository Layout
 

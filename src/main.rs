@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
 }
 
 async fn environment() -> Result<Environment> {
-    let preset = EnvPreset::BinanceBtcUsdt1dSma20Sma50;
+    let preset = EnvPreset::BinanceBtcUsdt1d;
     let file_stem = preset.to_string();
 
     // None = automatically pin to the current crate version

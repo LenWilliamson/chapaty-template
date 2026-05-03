@@ -100,6 +100,11 @@ def main() -> int:
     df = load_equity_curve()
     returns = build_return_series(df)
 
+    if returns.empty or returns.std() == 0.0:
+        print("[tearsheet] WARNING: Strategy generated no returns (flat equity curve).", file=sys.stderr)
+        print("[tearsheet] Skipping QuantStats HTML generation to avoid math errors.", file=sys.stderr)
+        return 0
+
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
 
     # Note: QuantStats will require an internet connection here to download
