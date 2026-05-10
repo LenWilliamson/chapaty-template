@@ -64,7 +64,7 @@ Need a different dataset or timeframe? Drop a request in the `#data-requests` ch
 
 Chapaty includes pre-calculated technical analysis out of the box, so your agents can focus on decision-making:
 
-- **Trend & Momentum:** SMA, EMA, RSI
+- **Trend & Momentum:** SMA, EMA, RSI (Calculated on-the-fly via `StreamingSma`, `StreamingRsi`, etc.)
 - **Volume & Orderflow:** Volume Profile, TPO/Market Profile
 - **Contextual:** Economic Calendar events
 
@@ -81,6 +81,10 @@ Need a specific indicator we don't have? Please open a **Feature Request** on th
 
 2. **Dump your thoughts into `spec.md`:**
    Paste a PDF excerpt, a Pine Script / Python snippet, a blog URL, or a rough paragraph. No formal structure is required.
+
+   **Example Idea:**
+
+   > "Build a simple RSI Mean Reversion strategy using the standard EOD Binance BTC/USDT dataset. Track a 14-period RSI using `StreamingRsi`. Go long when the RSI drops below 30, and short when it exceeds 70. Close the position when the RSI crosses back over the 50 neutral line."
 
 3. **Prompt your LLM:**
    Copy and paste this prompt into your AI coding tool:

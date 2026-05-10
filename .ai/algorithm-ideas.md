@@ -6,8 +6,8 @@ _(Note: Remember the Data-Agnostic rule. If the user asks for "SMA Crossover on 
 
 ## 1. SMA Crossover (classic, good first build)
 
-**Preset:** `EnvPreset::BinanceBtcUsdt1dSma20Sma50`
-**Idea:** Go long when SMA(20) crosses above SMA(50); close when it crosses back down.
+**Preset:** `EnvPreset::BinanceBtcUsdt1d` or `EnvPreset::BinanceBtcUsdt1dSma20Sma50`
+**Idea:** Go long when SMA(20) crosses above SMA(50); close when it crosses back down. Calculate indicators on the fly using `StreamingSma`.
 **References:** `chapaty::gym::trading::agent::crossover::{StreamingCrossover, PrecomputedCrossover}`.
 
 ## 2. News Breakout
@@ -30,13 +30,13 @@ _(Note: Remember the Data-Agnostic rule. If the user asks for "SMA Crossover on 
 
 ## 5. Bidirectional SMA Crossover (shipped demo)
 
-**Preset:** `EnvPreset::BinanceBtcUsdt1dSma20Sma50`
-**Idea:** A continuous "Stop-and-Reverse" trend strategy. When the Fast SMA crosses above the Slow SMA, close any open Short positions and enter Long. When it crosses below, close any Long positions and enter Short. This ensures the agent is always exposed to the prevailing trend. See `src/agents/demo/` for the shipped baseline implementation utilizing the `StreamingSma` indicator.
+**Preset:** `EnvPreset::BinanceBtcUsdt1d`
+**Idea:** A continuous "Stop-and-Reverse" trend strategy. When the Fast SMA crosses above the Slow SMA, close any open Short positions and enter Long. When it crosses below, close any Long positions and enter Short. This ensures the agent is always exposed to the prevailing trend. See `src/agents/demo/agent.rs` for the shipped baseline implementation utilizing the `StreamingSma` indicator.
 
-## 6. RSI Mean Reversion (needs a preset with RSI: not yet shipped)
+## 6. RSI Mean Reversion (classic, good first build)
 
-**Preset:** none yet; request in Discord.
-**Idea:** RSI < 30 → long; RSI > 70 → short; close on neutral band re-entry.
+**Preset:** `EnvPreset::BinanceBtcUsdt1d`
+**Idea:** Calculate a 14-period RSI on the fly using `StreamingRsi`. Go long when RSI < 30; go short when RSI > 70; close open positions on neutral band re-entry (e.g., RSI crosses 50).
 
 ## 7. Volume Profile POC Reversion
 
