@@ -64,23 +64,30 @@ check:
 doctor:
 	@echo ">> Checking required dependencies..."
 	@echo ""
-	@if command -v rustc > /dev/null 2>&1; then \
+	@MISSING=0; \
+	if command -v rustc > /dev/null 2>&1; then \
 		echo "  Rust:   $$(rustc --version)"; \
 	else \
 		echo "  Rust:   NOT FOUND"; \
 		echo "            Install via: https://www.rust-lang.org/tools/install"; \
 		MISSING=1; \
-	fi
-	@if command -v python3 > /dev/null 2>&1; then \
-		echo "  Python: $$(python3 --version)"; \
+	fi; \
+	if command -v python3 > /dev/null 2>&1; then \
+		if python3 -c 'import sys; sys.exit(0 if sys.version_info >= (3, 13) else 1)' 2>/dev/null; then \
+			echo "  Python: $$(python3 --version) (OK)"; \
+		else \
+			echo "  Python: $$(python3 --version) (TOO OLD)"; \
+			echo "            Requires Python 3.13+. Install via: https://github.com/pyenv/pyenv#installation"; \
+			MISSING=1; \
+		fi; \
 	else \
 		echo "  Python: NOT FOUND"; \
 		echo "            Install via: https://github.com/pyenv/pyenv#installation"; \
 		MISSING=1; \
-	fi
-	@echo ""
-	@if ! command -v rustc > /dev/null 2>&1 || ! command -v python3 > /dev/null 2>&1; then \
-		echo "ERROR: One or more required dependencies are missing. See above."; \
+	fi; \
+	echo ""; \
+	if [ $$MISSING -eq 1 ]; then \
+		echo "ERROR: One or more required dependencies are missing or outdated. See above."; \
 		exit 1; \
 	fi
 	@echo ">> All required dependencies found."

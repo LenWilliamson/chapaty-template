@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use itertools::iproduct;
 use serde::Serialize;
 
-use chapaty::{gym::GridAxis, prelude::*};
+use chapaty::prelude::*;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DemoAgent {
@@ -94,82 +94,53 @@ impl Agent for DemoAgent {
             if let Some((_, state)) = active_trade {
                 if state.trade_type() == &TradeType::Short {
                     // Close the Short
-                    let close_cmd = MarketCloseCmd {
-                        agent_id: agent_id.clone(),
-                        trade_id: state.trade_id(),
-                        quantity: None,
-                    };
-                    actions.add(market_id, Action::MarketClose(close_cmd));
-
+                    actions.add(market_id, self.close_market(state.trade_id()));
                     // Open a Long
-                    self.trade_counter += 1;
-                    let open_cmd = OpenCmd {
-                        agent_id,
-                        trade_id: TradeId(self.trade_counter),
-                        trade_type: TradeType::Long,
-                        quantity: Quantity(1.0),
-                        entry_price: None,
-                        stop_loss: None,
-                        take_profit: None,
-                    };
-                    actions.add(market_id, Action::Open(open_cmd));
+                    actions.add(market_id, self.open(TradeType::Long));
                 }
             } else {
                 // Flat -> Open Long
-                self.trade_counter += 1;
-                let open_cmd = OpenCmd {
-                    agent_id,
-                    trade_id: TradeId(self.trade_counter),
-                    trade_type: TradeType::Long,
-                    quantity: Quantity(1.0),
-                    entry_price: None,
-                    stop_loss: None,
-                    take_profit: None,
-                };
-                actions.add(market_id, Action::Open(open_cmd));
+                actions.add(market_id, self.open(TradeType::Long));
             }
         } else if fast < slow {
             // Bearish Trend
             if let Some((_, state)) = active_trade {
                 if state.trade_type() == &TradeType::Long {
                     // Close the Long
-                    let close_cmd = MarketCloseCmd {
-                        agent_id: agent_id.clone(),
-                        trade_id: state.trade_id(),
-                        quantity: None,
-                    };
-                    actions.add(market_id, Action::MarketClose(close_cmd));
-
+                    actions.add(market_id, self.close_market(state.trade_id()));
                     // Open a Short
-                    self.trade_counter += 1;
-                    let open_cmd = OpenCmd {
-                        agent_id,
-                        trade_id: TradeId(self.trade_counter),
-                        trade_type: TradeType::Short,
-                        quantity: Quantity(1.0),
-                        entry_price: None,
-                        stop_loss: None,
-                        take_profit: None,
-                    };
-                    actions.add(market_id, Action::Open(open_cmd));
+                    actions.add(market_id, self.open(TradeType::Short));
                 }
             } else {
                 // Flat -> Open Short
-                self.trade_counter += 1;
-                let open_cmd = OpenCmd {
-                    agent_id,
-                    trade_id: TradeId(self.trade_counter),
-                    trade_type: TradeType::Short,
-                    quantity: Quantity(1.0),
-                    entry_price: None,
-                    stop_loss: None,
-                    take_profit: None,
-                };
-                actions.add(market_id, Action::Open(open_cmd));
+                actions.add(market_id, self.open(TradeType::Short));
             }
         }
 
         Ok(actions)
+    }
+}
+
+impl DemoAgent {
+    fn open(&mut self, trade_type: TradeType) -> Action {
+        self.trade_counter += 1;
+        Action::Open(OpenCmd {
+            agent_id: self.identifier(),
+            trade_id: TradeId(self.trade_counter),
+            trade_type,
+            quantity: Quantity(1.0),
+            entry_price: None, // Market Order
+            stop_loss: None,
+            take_profit: None,
+        })
+    }
+
+    fn close_market(&self, trade_id: TradeId) -> Action {
+        Action::MarketClose(MarketCloseCmd {
+            agent_id: self.identifier(),
+            trade_id,
+            quantity: None,
+        })
     }
 }
 

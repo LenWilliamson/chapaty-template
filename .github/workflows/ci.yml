@@ -22,7 +22,7 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: "[0/4] Check no local path dependency for chapaty"
+      - name: "[0/5] Check no local path dependency for chapaty"
         run: |
           if grep -E '^chapaty\s*=.*path\s*=' Cargo.toml; then
             echo ""
