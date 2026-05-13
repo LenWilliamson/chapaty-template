@@ -175,35 +175,35 @@ journal.trade_stats()?.to_file(cfg)?;
 
 ### Grid Search Evaluation (Parameter Sweeping)
 
-> **CRITICAL: PREVENTING RAYON STALLS**
+> **CRITICAL: GRID SEARCH EXECUTION**
 >
-> 1. **Eager Allocation:** Use `itertools::iproduct!`, filter valid parameters, and eagerly collect the instantiated agents into a standard `Vec`. Do not return lazy iterators.
-> 2. **Par Bridge:** When passing the `Vec` to `evaluate_agents`, you **MUST** use `agents.into_iter().par_bridge()`. Never use `.into_par_iter()`, as it causes Rayon's work-stealing threads to stall heavily in this specific environment.
+> 1. **Eager Allocation:** Use `itertools::iproduct!`, filter valid parameters, assign unique IDs using `.enumerate()`, and eagerly collect the instantiated agents into a standard `Vec<(usize, Agent)>`.
+> 2. **API:** Pass the `Vec` directly to `evaluate_agents`. The environment natively handles parallelization (`rayon`) and smooth progress tracking.
+> 3. **Runtime Estimation:** For massive grid searches (1M+ agents), benchmark a single representative agent first using `env.evaluate_agent()` to estimate total parallel wait time.
 
 ```rust
 // 1. Grid Builder implementation
-pub fn build(self) -> (usize, Vec<(usize, MyAgent)>) {
+pub fn build(self) -> Vec<(usize, MyAgent)> {
     let sls = self.sl_axis.generate();
     let tps = self.tp_axis.generate();
 
-    // Eagerly collect into a Vec
-    let agents = iproduct!(sls, tps)
+    // Eagerly collect into a Vec with unique IDs mapped via enumerate()
+    iproduct!(sls, tps)
         .filter(|(sl, tp)| sl < tp) // Filter invalid logic
         .enumerate()
         .map(|(uid, (sl, tp))| (uid, MyAgent::new(sl, tp)))
-        .collect::<Vec<_>>();
-
-    (agents.len(), agents)
+        .collect::<Vec<_>>()
 }
 
 // 2. Execution in main.rs
-let (stream_len, agents) = MyAgentGrid::baseline()?.build();
+let agents = MyAgentGrid::baseline()?.build();
+
+// evaluate_agents handles rayon parallelization and progress bars natively
 let leaderboard = env.evaluate_agents(
-    // CRITICAL: Must use .into_iter().par_bridge()
-    agents.into_iter().par_bridge(),
+    agents,
     100, // top_k to retain
-    stream_len as u64,
 )?;
+
 leaderboard.to_file_sync(&FileConfig::default())?;
 ```
 

@@ -159,7 +159,7 @@ impl DemoAgentGrid {
         })
     }
 
-    pub fn build(self) -> (usize, Vec<(usize, DemoAgent)>) {
+    pub fn build(self) -> Vec<(usize, DemoAgent)> {
         let fasts = self.fast_period.generate();
         let slows = self.slow_period.generate();
 
@@ -169,16 +169,13 @@ impl DemoAgentGrid {
             .filter(|(f, s)| f < s)
             .collect::<Vec<_>>();
 
-        let total_combinations = valid_args.len();
         let ohlcv_id = self.ohlcv_id;
 
         // 2. Map to Agent instances
-        let agents = valid_args
+        valid_args
             .into_iter()
             .enumerate()
             .map(|(uid, (fast, slow))| (uid, DemoAgent::new(ohlcv_id, fast as u16, slow as u16)))
-            .collect::<Vec<_>>();
-
-        (total_combinations, agents)
+            .collect::<Vec<_>>()
     }
 }
