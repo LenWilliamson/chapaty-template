@@ -119,7 +119,8 @@ If you need to pin your repository to a historical version, you can check out a 
 
 | Template Tag | Core `chapaty` Version | Notes         |
 | ------------ | ---------------------- | ------------- |
-| `v1.1.2+x`   | `1.1.2`                | Active Stable |
+| `v1.1.3+x`   | `1.1.3`                | Active Stable |
+| `v1.1.2+x`   | `1.1.2`                | Legacy        |
 | `v1.1.0+x`   | `1.1.0`                | Legacy        |
 
 _(Example: Checking out tag `v1.1.2+5` guarantees you are using the 5th iteration of the template designed specifically for `chapaty v1.1.2`.)_
