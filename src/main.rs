@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use chapaty::prelude::*;
-use rayon::iter::ParallelBridge;
 use std::path::Path;
 
 use crate::agents::demo::{DemoAgent, DemoAgentGrid};
@@ -38,12 +37,10 @@ async fn main() -> Result<()> {
     // 2. Parallel Grid Search (Parameter Sweep)
     // ==========================================
     println!(">> Building DemoAgent Grid...");
-    let (count, agents) = DemoAgentGrid::baseline(ohlcv)?.build();
+    let agents = DemoAgentGrid::baseline(ohlcv)?.build();
 
-    println!(">> Evaluating {count} agents in parallel...");
-    // Calling .into_par_iter() directly on the agents Vec an cause rayon to stall for large Vecs.
-    // Prefere using agents.into_iter().par_bridge(). It is safe and efficient for Vecs.
-    let leaderboard = env.evaluate_agents(agents.into_iter().par_bridge(), 100, count as u64)?;
+    println!(">> Evaluating agents in parallel...");
+    let leaderboard = env.evaluate_agents(agents, 100)?;
 
     leaderboard.to_file_sync(&file_cfg)?;
     println!(">> Grid complete. Leaderboard saved.");
