@@ -17,6 +17,7 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import quantstats as qs
 
@@ -100,9 +101,15 @@ def main() -> int:
     df = load_equity_curve()
     returns = build_return_series(df)
 
-    if returns.empty or returns.std() == 0.0:
-        print("[tearsheet] WARNING: Strategy generated no returns (flat equity curve).", file=sys.stderr)
-        print("[tearsheet] Skipping QuantStats HTML generation to avoid math errors.", file=sys.stderr)
+    if returns.empty or np.isclose(returns, 0.0, atol=1e-8).all():
+        print(
+            "[tearsheet] WARNING: Strategy generated no returns (flat equity curve).",
+            file=sys.stderr,
+        )
+        print(
+            "[tearsheet] Skipping QuantStats HTML generation to avoid math errors.",
+            file=sys.stderr,
+        )
         return 0
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)

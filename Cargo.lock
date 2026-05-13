@@ -476,9 +476,9 @@ dependencies = [
 
 [[package]]
 name = "chapaty"
-version = "1.1.3"
+version = "1.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a903a40346a05710017639483372f1c2ef85ecf9ddd72eab051cf9e78cadd41f"
+checksum = "f4f5fd44ffad5d8057d879234c316d82c3f167e80f1ad28614fee68a75a01f02"
 dependencies = [
  "async-channel",
  "blake3",
@@ -519,7 +519,7 @@ dependencies = [
 
 [[package]]
 name = "chapaty-template"
-version = "1.1.3+1"
+version = "1.1.4"
 dependencies = [
  "anyhow",
  "chapaty",
