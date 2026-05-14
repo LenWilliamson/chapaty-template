@@ -44,19 +44,21 @@ run:
 	@echo ">> Run completed."
 
 update:
-	@echo ">> [1/3] Syncing LLM prompts from $(TEMPLATE_REPO)..."
+	@echo ">> [1/4] Syncing LLM prompts from $(TEMPLATE_REPO)..."
 	@mkdir -p .ai
 	curl -fsSL $(TEMPLATE_REPO)/AI.md                      -o AI.md
 	curl -fsSL $(TEMPLATE_REPO)/.ai/agent-plan.md          -o .ai/agent-plan.md
 	curl -fsSL $(TEMPLATE_REPO)/.ai/chapaty-api.md         -o .ai/chapaty-api.md
 	curl -fsSL $(TEMPLATE_REPO)/.ai/rust-vibe-rules.md     -o .ai/rust-vibe-rules.md
 	curl -fsSL $(TEMPLATE_REPO)/.ai/algorithm-ideas.md     -o .ai/algorithm-ideas.md
-	@echo ">> [2/3] Syncing visualization script..."
+	@echo ">> [2/4] Syncing visualization script..."
 	curl -fsSL $(TEMPLATE_REPO)/visualization/generate_tearsheet.py -o visualization/generate_tearsheet.py
 	curl -fsSL $(TEMPLATE_REPO)/visualization/requirements.txt      -o visualization/requirements.txt
-	@echo ">> [3/3] Updating Rust dependencies..."
+	@echo ">> [3/4] Updating Rust dependencies..."
 	cargo update
-	@echo ">> Update complete. If your agent fails to compile, paste the error into your LLM or reach out on Discord."
+	@echo ">> [4/4] Updating Makefile..."
+	curl -fsSL $(TEMPLATE_REPO)/Makefile -o Makefile
+	@echo ">> Update complete. If the Makefile itself changed, re-run 'make update' to apply new logic."
 
 check:
 	@echo ">> Running pre-push checks..."
