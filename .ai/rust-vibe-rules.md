@@ -93,3 +93,35 @@ Do not narrate obvious code. Use comments to explain business rules, magic numbe
 **BAD:** `// Increment the trade counter`
 
 **GOOD:** `// Risk factor 0.89 comes from the Q3 2024 optimization sweep`
+
+## 13. Stack Overflows in Grid Search (`RUST_MIN_STACK`)
+
+If a grid search crashes with:
+
+```
+thread '<unknown>' (...) has overflowed its stack
+fatal runtime error: stack overflow, aborting
+```
+
+The user's agent logic is almost certainly **not** the cause. Do not start hunting for recursion in `act()`. The chapaty engine evaluates grid agents on Rayon worker threads. The engine's internal call stack can exceed `RUST_MIN_STACK` on worker threads even when the main-thread run succeeds.
+
+**Fix:** bump `RUST_MIN_STACK` for the worker threads. The template's
+`Makefile` already sets this on the `run` target:
+
+```makefile
+RUST_MIN_STACK=67108864 cargo run --release   # 64 MiB
+```
+
+**Sizing guide:**
+
+| Value       | Bytes   |
+| ----------- | ------- |
+| `16777216`  | 16 MiB  |
+| `67108864`  | 64 MiB  |
+| `134217728` | 128 MiB |
+| `268435456` | 256 MiB |
+
+- **Do not** "fix" this by adding recursion guards or rewriting agent logic. The agent code is fine; the env var is the right lever.
+- **Do not** raise it beyond what's needed — each worker reserves this much virtual address space, and on a 16-core machine 256 MiB × 16 = 4 GiB of address space just for stacks.
+
+If even 256 MiB overflows, something recursive could be in the user's agent (e.g., an indicator that calls itself, or a `Drop` impl that recurses). At that point, investigate the agent. If everything fails, redirect the user to Discord for help.

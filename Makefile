@@ -36,8 +36,9 @@ run:
 		echo "ERROR: Python virtual environment not found. Please run 'make setup' first."; \
 		exit 1; \
 	fi
-	@echo ">> Running Chapaty backtest..."
-	cargo run --release
+	@echo ">> Running Chapaty backtest with increased stack size of 64MiB..."
+	@echo ">> (See .ai/rust-vibe-rules.md for RUST_MIN_STACK sizing guidance.)"
+	RUST_MIN_STACK=67108864 cargo run --release
 	@echo ">> Generating QuantStats tearsheet..."
 	$(VENV_PYTHON) visualization/generate_tearsheet.py
 	@echo ">> Run completed."
