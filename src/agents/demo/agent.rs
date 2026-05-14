@@ -176,6 +176,6 @@ impl DemoAgentGrid {
             .into_iter()
             .enumerate()
             .map(|(uid, (fast, slow))| (uid, DemoAgent::new(ohlcv_id, fast as u16, slow as u16)))
-            .collect::<Vec<_>>()
+            .collect()
     }
 }
