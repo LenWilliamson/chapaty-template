@@ -144,7 +144,7 @@ impl Agent for Demo2Agent {
                     actions.add(
                         market_id,
                         Action::MarketClose(MarketCloseCmd {
-                            agent_id: self.agent_id.clone(),
+                            agent_id: self.identifier(),
                             trade_id: state.trade_id(),
                             quantity: None,
                         }),

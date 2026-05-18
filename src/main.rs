@@ -12,7 +12,7 @@ use crate::agents::{
 mod agents;
 
 /// Which agent to run. Change this one line to switch.
-const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo2;
+const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo;
 
 /// Max number of top performers to retain in the leaderboard.
 const LEADERBOARD_TOP_K: usize = 100;
@@ -101,7 +101,7 @@ fn ohlcv_id() -> OhlcvId {
 /// # Performance
 ///
 /// Before launching a large grid, benchmark a single agent with
-/// [`Environment::evaluate_agent`] and estimate total time as: `(single_agent_time × grid.len()) / cpu_cores`.
+/// [`Environment::evaluate_agent`] and estimate total time as: `(single_agent_time * grid.len()) / cpu_cores`.
 fn run_workflow<T>(
     env: &mut Environment,
     file_cfg: &FileConfig,
