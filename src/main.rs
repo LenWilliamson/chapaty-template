@@ -101,7 +101,7 @@ fn ohlcv_id() -> OhlcvId {
 /// # Performance
 ///
 /// Before launching a large grid, benchmark a single agent with
-/// [`Environment::evaluate_agent`] and estimate total time as: `(single_agent_time × grid.len()) / cpu_cores`.
+/// [`Environment::evaluate_agent`] and estimate total time as: `(single_agent_time * grid.len()) / cpu_cores`.
 fn run_workflow<T>(
     env: &mut Environment,
     file_cfg: &FileConfig,
