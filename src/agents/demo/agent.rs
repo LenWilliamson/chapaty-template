@@ -29,6 +29,9 @@ pub struct DemoAgent {
 
     #[serde(skip)]
     last_processed_ts: Option<DateTime<Utc>>,
+
+    #[serde(skip)]
+    agent_id: AgentIdentifier,
 }
 
 impl DemoAgent {
@@ -43,13 +46,14 @@ impl DemoAgent {
             current_fast: None,
             current_slow: None,
             last_processed_ts: None,
+            agent_id: AgentIdentifier::Named(Arc::new("DemoAgent".to_string())),
         }
     }
 }
 
 impl Agent for DemoAgent {
     fn identifier(&self) -> AgentIdentifier {
-        AgentIdentifier::Named(Arc::new("DemoAgent".to_string()))
+        self.agent_id.clone()
     }
 
     fn reset(&mut self) {
