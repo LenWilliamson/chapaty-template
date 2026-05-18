@@ -78,7 +78,7 @@ Once approved, build the strategy using the modern Rust (non-`mod.rs`) directory
    ```rust
    use crate::agents::{
        demo::{DemoAgent, DemoAgentGrid},
-       demo2::{BreakoutAgent, BreakoutAgentGrid},
+       demo2::{Demo2Agent, Demo2AgentGrid},
        <name>::{<Name>Agent, <Name>AgentGrid},
    };
    ```

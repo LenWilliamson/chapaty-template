@@ -6,13 +6,13 @@ use strum::{AsRefStr, EnumString};
 
 use crate::agents::{
     demo::{DemoAgent, DemoAgentGrid},
-    demo2::{BreakoutAgent, BreakoutAgentGrid},
+    demo2::{Demo2Agent, Demo2AgentGrid},
 };
 
 mod agents;
 
 /// Which agent to run. Change this one line to switch.
-const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo;
+const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo2;
 
 /// Max number of top performers to retain in the leaderboard.
 const LEADERBOARD_TOP_K: usize = 100;
@@ -47,8 +47,8 @@ async fn main() -> Result<()> {
         ActiveAgent::Demo2 => run_workflow(
             &mut env,
             &file_cfg,
-            BreakoutAgent::new(ohlcv, 13, 1.8, 0.9, 2.9, 1.0),
-            BreakoutAgentGrid::baseline(ohlcv)?.build(),
+            Demo2Agent::new(ohlcv),
+            Demo2AgentGrid::baseline(ohlcv)?.build(),
         ),
     }
 }
