@@ -14,6 +14,8 @@ If the user pastes a trading strategy directly into the chat but has not created
 
 If the user is completely stuck and doesn't know what to build, guide them to `.ai/algorithm-ideas.md` to pick a seed strategy.
 
+**When registering a new agent in `main.rs`, only add — never remove.** The `ActiveAgent` enum lists every agent the user has built; previous variants and their match arms must remain intact so the user can switch back by changing a single line. Do not "clean up" inactive variants. If an unused-import warning fires for an agent that is not currently selected, leave it — the next switch will silence it.
+
 ## Phase 1: Ingestion & Verification
 
 1. Read `src/agents/<name>/spec.md` exactly as the user wrote it.
@@ -69,9 +71,55 @@ Once approved, build the strategy using the modern Rust (non-`mod.rs`) directory
 3. **Register the Module:** Append `pub mod <name>;` to `src/agents.rs` (create the file if missing).
 4. **Wire it into `src/main.rs`:**
 
-- **Single Agent Evaluation (REQUIRED):** ALWAYS run `env.evaluate_agent()` on a baseline agent first, and export its reports. This guarantees the Python visualization script succeeds.
-- **Grid Search Execution (Optional):** Include a grid search block. Build the grid by eagerly collecting agents into a `Vec<(usize, Agent)>` (assigning unique IDs via `.enumerate()`) and pass the vector directly to `env.evaluate_agents()`, which natively handles `rayon` parallelization and progress tracking.
-- **Runtime Estimation (CRITICAL for Large Grids):** Before launching massive grid searches (e.g., 1M+ agents), use the single baseline agent to benchmark the execution time and estimate your total parallel wait time using `(Single Time * Total Agents) / CPU Cores`.
+   `main.rs` uses a single-line agent switch: an `ActiveAgent` enum drives both the report folder and the match in `main`. Registering a new agent means three local edits.
+
+   **a. Import the agent and its grid** by adding a line to the existing `use` block:
+
+   ```rust
+   use crate::agents::{
+       demo::{DemoAgent, DemoAgentGrid},
+       demo2::{BreakoutAgent, BreakoutAgentGrid},
+       <name>::{<Name>Agent, <Name>AgentGrid},
+   };
+   ```
+
+   **b. Add a variant to the `ActiveAgent` enum:**
+
+   ```rust
+   #[derive(Debug, Clone, Copy, AsRefStr, EnumString)]
+   #[strum(serialize_all = "lowercase")]
+   enum ActiveAgent {
+       Breakout,
+       Demo,
+       <Name>, // <- new variant
+   }
+   ```
+
+   The `strum(serialize_all = "lowercase")` derive turns `<Name>` into the report subdirectory (`chapaty/reports/<name>/`) automatically.
+
+   **c. Add a match arm in `main`:**
+
+   ```rust
+   ActiveAgent::<Name> => run_workflow(
+       &mut env,
+       &file_cfg,
+       <Name>Agent::new(ohlcv, /* baseline params */),
+       <Name>AgentGrid::baseline(ohlcv)?.build(),
+   ),
+   ```
+
+   **d. Activate it** by setting the top-of-file constant:
+
+   ```rust
+   const ACTIVE_AGENT: ActiveAgent = ActiveAgent::<Name>;
+   ```
+
+   `run_workflow` is generic over the concrete agent type, so each match arm monomorphizes independently. The log label comes from `Agent::identifier()`, so the agent owns its display name.
+
+   **Required guarantees (same as before):**
+   - **Single Agent Evaluation:** `run_workflow` always runs the baseline first and writes the journal, cumulative returns, portfolio performance, trade stats, and EOD equity curve. This guarantees the Python visualization script succeeds.
+   - **Grid Search Execution:** The grid builder returns `Vec<(usize, Agent)>` with UIDs assigned via `.enumerate()`, passed directly to `env.evaluate_agents()` for `rayon` parallelization.
+   - **Runtime Estimation:** Before launching massive grid searches (e.g., 1M+ agents), benchmark the baseline and estimate total wait time as `(single_agent_time × grid.len()) / cpu_cores`.
 
 ## Phase 5: Handoff
 

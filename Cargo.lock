@@ -526,6 +526,7 @@ dependencies = [
  "chrono",
  "itertools",
  "serde",
+ "strum",
  "tokio",
 ]
 
