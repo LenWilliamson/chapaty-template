@@ -1,8 +1,10 @@
 """
 Generate a QuantStats HTML tearsheet from a Chapaty Equity Curve.
 
-Reads `chapaty/reports/equity_curve.parquet` if present, else falls back to
-`chapaty/reports/equity_curve.csv`.
+Reads `chapaty/reports/<agent>/equity_curve.parquet` if present, else falls
+back to the corresponding `.csv`. The agent subdirectory is passed as the
+first CLI argument (e.g. `python generate_tearsheet.py demo`) and matches
+the `ActiveAgent` variant name (lowercased) declared in `src/main.rs`.
 
 Converts the pre-downsampled Mark-to-Market (M2M) PnL snapshots from the
 chapaty lib into a continuous, daily percentage return series required by
@@ -14,6 +16,7 @@ environment, which is handled automatically by running `make run`.
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -26,17 +29,27 @@ BENCHMARK_TICKER: str = "SPY"  # SPDR S&P 500 ETF
 
 # Path resolution to lock exactly to the reports folder
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
-REPORTS_DIR = PROJECT_ROOT / "chapaty" / "reports"
-OUTPUT_PATH = REPORTS_DIR / "tearsheet.html"
+REPORTS_ROOT = PROJECT_ROOT / "chapaty" / "reports"
 
 # Columns matching the Rust EquityCurveCol enum
 TS_COL = "timestamp"
 PNL_COL = "portfolio_value"
 
 
-def load_equity_curve() -> pd.DataFrame:
-    parquet_path = REPORTS_DIR / "equity_curve.parquet"
-    csv_path = REPORTS_DIR / "equity_curve.csv"
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Generate a QuantStats tearsheet for a Chapaty agent's backtest."
+    )
+    parser.add_argument(
+        "agent",
+        help="Agent subdirectory under chapaty/reports/ (e.g. 'demo', 'demo2').",
+    )
+    return parser.parse_args()
+
+
+def load_equity_curve(reports_dir: Path) -> pd.DataFrame:
+    parquet_path = reports_dir / "equity_curve.parquet"
+    csv_path = reports_dir / "equity_curve.csv"
 
     if parquet_path.exists():
         print(f"[tearsheet] Reading {parquet_path}")
@@ -46,7 +59,7 @@ def load_equity_curve() -> pd.DataFrame:
         return pd.read_csv(csv_path)
 
     print(
-        f"[tearsheet] ERROR: no equity curve found in {REPORTS_DIR}/. "
+        f"[tearsheet] ERROR: no equity curve found in {reports_dir}/. "
         f"Did you run `make run` first?",
         file=sys.stderr,
     )
@@ -98,7 +111,18 @@ def build_return_series(df: pd.DataFrame) -> pd.Series:
 
 
 def main() -> int:
-    df = load_equity_curve()
+    args = parse_args()
+    reports_dir = REPORTS_ROOT / args.agent
+    output_path = reports_dir / "tearsheet.html"
+
+    if not reports_dir.is_dir():
+        print(
+            f"[tearsheet] ERROR: agent directory not found: {reports_dir}",
+            file=sys.stderr,
+        )
+        return 1
+
+    df = load_equity_curve(reports_dir)
     returns = build_return_series(df)
 
     if returns.empty or np.isclose(returns, 0.0, atol=1e-8).all():
@@ -112,7 +136,7 @@ def main() -> int:
         )
         return 0
 
-    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    reports_dir.mkdir(parents=True, exist_ok=True)
 
     # Note: QuantStats will require an internet connection here to download
     # the benchmark historical data via Yahoo Finance.
@@ -120,12 +144,12 @@ def main() -> int:
     qs.reports.html(
         returns,
         benchmark=BENCHMARK_TICKER,
-        output=str(OUTPUT_PATH),
-        title="Chapaty Portfolio Tearsheet",
-        download_filename=OUTPUT_PATH.name,
+        output=str(output_path),
+        title=f"Chapaty Portfolio Tearsheet — {args.agent}",
+        download_filename=output_path.name,
     )
 
-    print(f"[tearsheet] Wrote {OUTPUT_PATH}")
+    print(f"[tearsheet] Wrote {output_path}")
     return 0
 
 

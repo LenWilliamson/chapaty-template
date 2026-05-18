@@ -36,11 +36,21 @@ run:
 		echo "ERROR: Python virtual environment not found. Please run 'make setup' first."; \
 		exit 1; \
 	fi
-	@echo ">> Running Chapaty backtest with increased stack size of 64MiB..."
-	@echo ">> (See .ai/rust-vibe-rules.md for RUST_MIN_STACK sizing guidance.)"
-	RUST_MIN_STACK=67108864 cargo run --release
-	@echo ">> Generating QuantStats tearsheet..."
-	$(VENV_PYTHON) visualization/generate_tearsheet.py
+	@AGENT=$$(grep -E '^const ACTIVE_AGENT' src/main.rs \
+	          | grep -oE 'ActiveAgent::[A-Za-z0-9_]+' \
+	          | sed -E 's/ActiveAgent:://' \
+	          | tr '[:upper:]' '[:lower:]'); \
+	if [ -z "$$AGENT" ]; then \
+		echo "ERROR: Could not parse ACTIVE_AGENT from src/main.rs."; \
+		echo "       Expected a line like: const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo;"; \
+		exit 1; \
+	fi; \
+	echo ">> Active agent: $$AGENT"; \
+	echo ">> Running Chapaty backtest with increased stack size of 64MiB..."; \
+	echo ">> (See .ai/rust-vibe-rules.md for RUST_MIN_STACK sizing guidance.)"; \
+	RUST_MIN_STACK=67108864 cargo run --release && \
+	echo ">> Generating QuantStats tearsheet for agent: $$AGENT" && \
+	$(VENV_PYTHON) visualization/generate_tearsheet.py $$AGENT
 	@echo ">> Run completed."
 
 update:

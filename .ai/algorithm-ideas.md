@@ -33,17 +33,22 @@ _(Note: Remember the Data-Agnostic rule. If the user asks for "SMA Crossover on 
 **Preset:** `EnvPreset::BinanceBtcUsdt1d`
 **Idea:** A continuous "Stop-and-Reverse" trend strategy. When the Fast SMA crosses above the Slow SMA, close any open Short positions and enter Long. When it crosses below, close any Long positions and enter Short. This ensures the agent is always exposed to the prevailing trend. See `src/agents/demo/agent.rs` for the shipped baseline implementation utilizing the `StreamingSma` indicator.
 
-## 6. RSI Mean Reversion (classic, good first build)
+## 6. Breakout Range Strategy (shipped demo2)
+
+**Preset:** `EnvPreset::BinanceBtcUsdt1d`
+**Idea:** A momentum breakout strategy on daily candles. Calculate the body range (`abs(close - open)`) of each candle and compare against a 20-period SMA of past ranges. When the current range exceeds `SMA * multiplier`, enter in the candle's direction (Long if green, Short if red). Supports pyramiding (additional entries on aligned signals) and a one-bar cool-down on counter-trend signals to avoid whipsaws. Dynamic SL/TP are scaled to the breakout bar's range. See `src/agents/demo2/agent.rs` for the shipped implementation.
+
+## 7. RSI Mean Reversion (classic, good first build)
 
 **Preset:** `EnvPreset::BinanceBtcUsdt1d`
 **Idea:** Calculate a 14-period RSI on the fly using `StreamingRsi`. Go long when RSI < 30; go short when RSI > 70; close open positions on neutral band re-entry (e.g., RSI crosses 50).
 
-## 7. Volume Profile POC Reversion
+## 8. Volume Profile POC Reversion
 
 **Preset:** `EnvPreset::BinanceBtcUsdt1h1mVolumeProfile1d100Usdt`
 **Idea:** When price trades two standard deviations from the prior-day Point of Control, fade back toward it.
 
-## 8. TPO Open-Drive
+## 9. TPO Open-Drive
 
 **Preset:** `EnvPreset::BinanceBtcUsdt1h1mTpo1d1Usdt` or `NinjaTraderCme6eh61mTpo1d`
 **Idea:** When the opening range extends outside prior-day value area within the first 30 minutes, trade in the direction of the breakout.
