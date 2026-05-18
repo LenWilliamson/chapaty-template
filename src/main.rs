@@ -12,7 +12,7 @@ use crate::agents::{
 mod agents;
 
 /// Which agent to run. Change this one line to switch.
-const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo2;
+const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo;
 
 /// Max number of top performers to retain in the leaderboard.
 const LEADERBOARD_TOP_K: usize = 100;
