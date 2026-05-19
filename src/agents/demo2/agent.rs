@@ -131,28 +131,24 @@ impl Agent for Demo2Agent {
         let market_id: MarketId = self.ohlcv_id.into();
         let mut actions = Actions::new();
 
-        if let Some(first_trade) = active_trades.peek() {
-            let current_dir = *first_trade.trade_type();
+        let is_counter_signal = active_trades
+            .peek()
+            .is_some_and(|first| *first.trade_type() != signal_dir);
 
-            if current_dir == signal_dir {
-                // Pyramiding: same direction
-                actions.add(market_id, self.open(signal_dir, range, current_price));
-            } else {
-                // Counter signal: close all, don't open new (cool-down achieved naturally)
-                // We consume the iterator directly without ever allocating a Vec
-                for state in active_trades {
-                    actions.add(
-                        market_id,
-                        Action::MarketClose(MarketCloseCmd {
-                            agent_id: self.identifier(),
-                            trade_id: state.trade_id(),
-                            quantity: None,
-                        }),
-                    );
-                }
+        if is_counter_signal {
+            // Counter signal: close all, don't open new
+            for state in active_trades {
+                actions.add(
+                    market_id,
+                    Action::MarketClose(MarketCloseCmd {
+                        agent_id: self.identifier(),
+                        trade_id: state.trade_id(),
+                        quantity: None,
+                    }),
+                );
             }
         } else {
-            // No active trades
+            // Covers both "No active trades" AND "Pyramiding (same direction)"
             actions.add(market_id, self.open(signal_dir, range, current_price));
         }
 
