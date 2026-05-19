@@ -92,32 +92,28 @@ impl Agent for DemoAgent {
 
         let mut actions = Actions::new();
 
-        // 5. Signal Logic (Stop-and-Reverse)
-        if fast > slow {
-            // Bullish Trend
-            if let Some((_, state)) = active_trade {
-                if state.trade_type() == &TradeType::Short {
-                    // Close the Short
-                    actions.add(market_id, self.close_market(state.trade_id()));
-                    // Open a Long
-                    actions.add(market_id, self.open(TradeType::Long));
-                }
-            } else {
-                // Flat -> Open Long
-                actions.add(market_id, self.open(TradeType::Long));
-            }
+        // 5a. Determine the Target State
+        let desired_dir = if fast > slow {
+            Some(TradeType::Long)
         } else if fast < slow {
-            // Bearish Trend
+            Some(TradeType::Short)
+        } else {
+            None // fast == slow, no clear signal
+        };
+
+        // 5b. Determine the Current State
+        let current_dir = active_trade.map(|(_, state)| *state.trade_type());
+
+        // 5c. Bridge the Gap
+        if current_dir != desired_dir {
+            // 1. Clear the old state if it exists
             if let Some((_, state)) = active_trade {
-                if state.trade_type() == &TradeType::Long {
-                    // Close the Long
-                    actions.add(market_id, self.close_market(state.trade_id()));
-                    // Open a Short
-                    actions.add(market_id, self.open(TradeType::Short));
-                }
-            } else {
-                // Flat -> Open Short
-                actions.add(market_id, self.open(TradeType::Short));
+                actions.add(market_id, self.close_market(state.trade_id()));
+            }
+
+            // 2. Enter the new state if there is a signal
+            if let Some(dir) = desired_dir {
+                actions.add(market_id, self.open(dir));
             }
         }
 
@@ -166,18 +162,10 @@ impl DemoAgentGrid {
     pub fn build(self) -> Vec<(usize, DemoAgent)> {
         let fasts = self.fast_period.generate();
         let slows = self.slow_period.generate();
-
-        // 1. Eagerly collect valid combinations into a flat Vector
-        let valid_args = iproduct!(fasts, slows)
-            // Example filter: Fast must be less than Slow
-            .filter(|(f, s)| f < s)
-            .collect::<Vec<_>>();
-
         let ohlcv_id = self.ohlcv_id;
 
-        // 2. Map to Agent instances
-        valid_args
-            .into_iter()
+        iproduct!(fasts, slows)
+            .filter(|(f, s)| f < s)
             .enumerate()
             .map(|(uid, (fast, slow))| (uid, DemoAgent::new(ohlcv_id, fast as u16, slow as u16)))
             .collect()
