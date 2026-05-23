@@ -9,7 +9,7 @@
 
 This repository is the fastest way to start building quantitative trading agents in Rust. Designed with a familiar [**Gym-style API**][gymnasium] (`reset`, `step`, `act`), the [`chapaty`][chapaty-crate] crate evaluates parallel backtests efficiently. This template wires the core engine up with an LLM-friendly workflow and an automated QuantStats HTML tearsheet.
 
-**You don't need to be a Rust expert.** Describe your strategy in plain English, and instruct your LLM of choice to generate the Rust code using the provided `AI.md` instructions (see: [Vibe-Coding Workflow](#vibe-coding-workflow)). For a technical deep dive into the design decisions behind the engine: timeframe synchronization, fill modeling, and parallel grid search — read the companion blog post: [**A Gym-style API for algorithmic trading research, in Rust**][blog-deep-dive].
+**You don't need to be a Rust expert.** Describe your strategy in plain English, and instruct your LLM of choice to generate the Rust code using the provided `AI.md` instructions (see: [Vibe-Coding Workflow](#vibe-coding-workflow)). For a technical deep dive into the design decisions behind the engine: timeframe synchronization, fill modeling, and parallel grid search you can read the companion blog post: [**A Gym-style API for algorithmic trading research, in Rust**][blog-deep-dive].
 
 ![End-to-end Chapaty workflow: running `make run` executes the demo strategy and produces a QuantStats tearsheet.][workflow-gif]
 
