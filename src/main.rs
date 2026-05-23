@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use chapaty::prelude::*;
 use serde::Serialize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use strum::{AsRefStr, EnumString};
 
 use crate::agents::{
@@ -34,7 +34,7 @@ async fn main() -> Result<()> {
     let mut env = environment().await?;
     let ohlcv = ohlcv_id();
 
-    let report_dir: PathBuf = Path::new(REPORTS_ROOT).join(ACTIVE_AGENT.as_ref());
+    let report_dir = Path::new(REPORTS_ROOT).join(ACTIVE_AGENT.as_ref());
     let file_cfg = FileConfig::default().with_dir(&report_dir);
 
     match ACTIVE_AGENT {
