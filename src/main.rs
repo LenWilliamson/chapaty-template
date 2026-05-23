@@ -34,8 +34,8 @@ async fn main() -> Result<()> {
     let mut env = environment().await?;
     let ohlcv = ohlcv_id();
 
-    let report_dir = Path::new(REPORTS_ROOT).join(ACTIVE_AGENT.as_ref());
-    let file_cfg = FileConfig::default().with_dir(&report_dir);
+    let reports_dir = Path::new(REPORTS_ROOT).join(ACTIVE_AGENT.as_ref());
+    let file_cfg = FileConfig::default().with_dir(&reports_dir);
 
     match ACTIVE_AGENT {
         ActiveAgent::Demo => run_workflow(
