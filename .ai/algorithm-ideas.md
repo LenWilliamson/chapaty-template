@@ -8,25 +8,21 @@ _(Note: Remember the Data-Agnostic rule. If the user asks for "SMA Crossover on 
 
 **Preset:** `EnvPreset::BinanceBtcUsdt1d` or `EnvPreset::BinanceBtcUsdt1dSma20Sma50`
 **Idea:** Go long when SMA(20) crosses above SMA(50); close when it crosses back down. Calculate indicators on the fly using `StreamingSma`.
-**References:** `chapaty::gym::trading::agent::crossover::{StreamingCrossover, PrecomputedCrossover}`.
 
 ## 2. News Breakout
 
 **Preset:** `EnvPreset::NinjaTraderCme6eh61mUsEmpHighEventsOnly`
 **Idea:** After a US high-impact employment release, wait N minutes, then enter in the direction of the news candle if price breaks its high/low.
-**Reference:** `chapaty::gym::trading::agent::news::breakout::NewsBreakout` (also `NewsBreakoutGrid` for parameter sweeps).
 
 ## 3. News Fade
 
 **Preset:** `EnvPreset::NinjaTraderCme6eh61mUsEmpHighEventsOnly`
 **Idea:** Opposite of breakout. Assume markets overreact to news, enter counter-trend after a cool-down.
-**Reference:** `chapaty::gym::trading::agent::news::fade::NewsFade` / `NewsFadeGrid`.
 
 ## 4. News Hybrid
 
 **Preset:** `EnvPreset::NinjaTraderCme6eh61m5mUsEmpHighEventsOnly`
 **Idea:** A composite agent that runs both the Breakout and Fade strategies simultaneously using a strict priority policy. Breakout signals represent stronger informational value and always dominate; if a Breakout triggers, it executes and retroactively closes any open Fade trades ("pivot" logic).
-**Reference:** `chapaty::gym::trading::agent::news::hybrid::NewsHybrid` / `NewsHybridGrid`.
 
 ## 5. Bidirectional SMA Crossover (shipped demo)
 
@@ -59,25 +55,4 @@ _(Note: Remember the Data-Agnostic rule. If the user asks for "SMA Crossover on 
 
 ## Boilerplate & Reference Examples (For LLMs)
 
-> **LLM FALLBACK DIRECTIVE:** The `chapaty-api.md` file contains everything you need for 95% of strategies. However, if the user explicitly asks for an exact clone of an official core strategy, OR if you are failing to compile a complex multi-agent state machine, you may use your web-fetching tools to read the raw source code of our official implementations as a reference.
-
-**For single-run testing in `src/main.rs`:**
-
-- `crossover.rs`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/examples/crossover.rs)
-- `news_breakout.rs`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/examples/news_breakout.rs)
-- `news_fade.rs`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/examples/news_fade.rs)
-- `news_hybrid.rs`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/examples/news_hybrid.rs)
-
-**For highly parallel Grid Search setups (`src/main.rs`):**
-
-- `news_breakout_grid.rs`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/examples/news_breakout_grid.rs)
-- `news_fade_grid.rs`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/examples/news_fade_grid.rs)
-
-**For Agent Implementations (`src/agents/<name>/agent.rs`):**
-
-- `crossover`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/src/gym/trading/agent/crossover.rs)
-- `news_breakout`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/src/gym/trading/agent/news/breakout.rs)
-- `news_fade`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/src/gym/trading/agent/news/fade.rs)
-- `news_hybrid`: [View Raw](https://raw.githubusercontent.com/LenWilliamson/chapaty/refs/heads/main/src/gym/trading/agent/news/hybrid.rs)
-
-If the user asks for a News Breakout strategy, fetch `breakout.rs` and `news_breakout.rs` to guarantee your generated code matches the framework's optimal design patterns.
+> **LLM FALLBACK DIRECTIVE:** The `chapaty-api.md` file contains everything you need for 95% of strategies. However, if the user explicitly asks for an exact clone of an official core strategy, OR if you are failing to compile a complex multi-agent state machine, you may use your web-fetching tools to read the raw source code of official implementations in the [chapaty-zoo](https://github.com/LenWilliamson/chapaty-zoo) as a reference.
