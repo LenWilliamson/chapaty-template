@@ -39,6 +39,6 @@ A momentum breakout strategy that trades in the direction of unusually large dai
 | `trade_qty` | `f64`   | `1.0`   | Fixed position size (Quantity) for each trade.                                  | N/A                |
 
 ## 7. Assumptions / Out of Scope
-- **SMA Indicator**: Since the core engine's `StreamingSma` expects `Price` (f64 prices), but we are taking the average of `Range` differences, we will likely feed the `Range` (as an `f64`) into a standard `StreamingSma` instance inside the agent's state manually every tick.
-- **Cool-down Scope**: The cool-down rule ("warten dann auf das neue Signal") implies we just skip opening a new trade on the exact day the counter-trend signal happens. The very next day, if a fresh breakout occurs, it is evaluated normally.
+- **SMA Indicator**: Since the core engine's `StreamingSma` expects `f64` we will feed the `Range` (as an `f64`) into a standard `StreamingSma` instance inside the agent's state manually every tick.
+- **Cool-down Scope**: The cool-down rule implies we just skip opening a new trade on the exact day the counter-trend signal happens. The very next day, if a fresh breakout occurs, it is evaluated normally.
 - **Pyramiding Quantity**: We assume each additional trade opened during a pyramiding signal uses the same base `trade_qty`.

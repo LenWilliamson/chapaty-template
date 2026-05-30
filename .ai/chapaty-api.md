@@ -10,7 +10,7 @@ Always begin your agent implementations and runners with the prelude:
 use chapaty::prelude::*;
 ```
 
-This brings in everything you need: **Core traits and states** (`Agent`, `Environment`, `Observation`, `Actions`, `State`), **action commands** (`OpenCmd`, `MarketCloseCmd`, `ModifyCmd`, `CancelCmd`), **strong primitives** (`Price`, `Quantity`, `Tick`, `Volume`, `TradeId`), **stream IDs** (`OhlcvId`, `EconomicCalendarId`, …), **domain enums** (`Symbol`, `SpotPair`, `TradeType`, …), **technical indicators** (`StreamingSma`, `StreamingEma`, `StreamingRsi`), **errors** (`ChapatyResult`), and **I/O configs** (`FileConfig`).
+This brings in everything you need: **Core traits and states** (`Agent`, `Environment`, `Observation`, `Actions`, `State`), **action commands** (`OpenCmd`, `MarketCloseCmd`, `ModifyCmd`, `CancelCmd`), **strong primitives** (`Price`, `Quantity`, `Tick`, `Volume`, `TradeId`), **stream IDs** (`OhlcvId`, `EconomicCalendarId`, ...), **domain enums** (`Symbol`, `SpotPair`, `TradeType`, ...), **technical indicators** (`StreamingSma`, `StreamingEma`, `StreamingRsi`, ...), **errors** (`ChapatyResult`), and **I/O configs** (`FileConfig`).
 
 _Tip: You can read the `src/agents/demo/agent.rs` file in this repository for a complete, simple reference implementation of a Stop-and-Reverse strategy._
 
@@ -227,8 +227,26 @@ let journal = env.journal()?;
 ```
 
 ## 10. Indicators
+The `StreamingIndicator` trait (available via `chapaty::prelude`) defines a unified interface for incremental technical indicators. The engine provides several built-in implementations, such as `StreamingSma`, `StreamingEma`, `StreamingRsi`, `StreamingFairValueGap`, `StreamingHhll`, etc. 
 
-The `math::indicator::StreamingIndicator` trait provides `StreamingSma`, `StreamingEma`, and `StreamingRsi`. Store these on the agent struct and call `.update(price)` which returns `Some(val)` when the window is warm.
+Idiomatic usage involves storing the indicator within your agent's state and invoking `.update(input)` on each tick or candle. Because many indicators require a minimum number of data points to "warm up," the `Output` is typically an `Option<T>`, yielding `Some(value)` only once the required window is filled.
+
+```rust
+/// A generic trait for incremental indicators.
+/// Designed to be object-safe so agents can hold `Box<dyn StreamingIndicator<Input=I, Output=O>>`.
+pub trait StreamingIndicator: std::fmt::Debug + Send + Sync {
+    type Input;
+    type Output<'a>
+    where
+        Self: 'a;
+
+    /// Update the indicator with the latest data point.
+    fn update(&mut self, input: Self::Input) -> Self::Output<'_>;
+
+    /// Reset the internal state to clear history (e.g., for a new trading session).
+    fn reset(&mut self);
+}
+```
 
 **Custom Indicators:** If the user requires Technical Analysis (TA) that is not available out of the box, do not be blocked. Implement it yourself as a stateful utility struct within the agent's file. If you do this, politely inform the user that they can submit a Pull Request to the core `chapaty` library, or drop a request in the `#data-requests` channel on Discord to make this indicator available to everyone.
 
