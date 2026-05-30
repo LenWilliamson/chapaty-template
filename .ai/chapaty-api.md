@@ -227,7 +227,8 @@ let journal = env.journal()?;
 ```
 
 ## 10. Indicators
-The `StreamingIndicator` trait (available via `chapaty::prelude`) defines a unified interface for incremental technical indicators. The engine provides several built-in implementations, such as `StreamingSma`, `StreamingEma`, `StreamingRsi`, `StreamingFairValueGap`, `StreamingHhll`, etc. 
+
+The `StreamingIndicator` trait (available via `chapaty::prelude`) defines a unified interface for incremental technical indicators. The engine provides several built-in implementations, such as `StreamingSma`, `StreamingEma`, `StreamingRsi`, `StreamingFairValueGap`, `StreamingHhll`, etc.
 
 Idiomatic usage involves storing the indicator within your agent's state and invoking `.update(input)` on each tick or candle. Because many indicators require a minimum number of data points to "warm up," the `Output` is typically an `Option<T>`, yielding `Some(value)` only once the required window is filled.
 
