@@ -19,10 +19,12 @@ TEMPLATE_REPO ?= https://raw.githubusercontent.com/LenWilliamson/chapaty-templat
 PYTHON_VENV   := .venv
 VENV_PIP      := $(PYTHON_VENV)/bin/pip
 VENV_PYTHON   := $(PYTHON_VENV)/bin/python
+# Keep build flags identical between `setup` and `run`
+CARGO_RUSTFLAGS := -C target-cpu=native
 
 setup: doctor
 	@echo ">> Building chapaty in release mode (first run downloads ~2 min of deps)..."
-	cargo build --release
+	RUSTFLAGS="$(CARGO_RUSTFLAGS)" cargo build --release
 	@echo ">> Creating Python virtual environment in $(PYTHON_VENV)..."
 	python3 -m venv $(PYTHON_VENV)
 	@echo ">> Upgrading pip..."
@@ -48,7 +50,7 @@ run:
 	echo ">> Active agent: $$AGENT"; \
 	echo ">> Running Chapaty backtest natively (target-cpu=native) with increased stack size of 64MiB..."; \
 	echo ">> (See .ai/rust-vibe-rules.md for RUST_MIN_STACK sizing guidance.)"; \
-	RUSTFLAGS="-C target-cpu=native" RUST_MIN_STACK=67108864 cargo run --release && \
+	RUSTFLAGS="$(CARGO_RUSTFLAGS)" RUST_MIN_STACK=67108864 cargo run --release && \
 	echo ">> Generating QuantStats tearsheet for agent: $$AGENT" && \
 	$(VENV_PYTHON) visualization/generate_tearsheet.py $$AGENT
 	@echo ">> Run completed."
