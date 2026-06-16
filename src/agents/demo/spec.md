@@ -12,7 +12,7 @@ A continuous, stop-and-reverse (SAR) trend-following strategy. It uses a Fast SM
 ## 3. Observation Inputs
 
 - **Market Data:** `obs.market_view.ohlcv().last_event(&self.ohlcv_id)` to feed the streaming SMAs.
-- **Portfolio State:** `obs.states.find_active_trade_for_agent(&self.identifier())` to check current position and `TradeType`.
+- **Portfolio State:** `obs.states.find_active_trade_for_agent(&self.identifier())` to check current position and `TradeKind`.
 
 ## 4. Entry Logic
 

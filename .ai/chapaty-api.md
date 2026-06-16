@@ -10,7 +10,7 @@ Always begin your agent implementations and runners with the prelude:
 use chapaty::prelude::*;
 ```
 
-This brings in everything you need: **Core traits and states** (`Agent`, `Environment`, `Observation`, `Actions`, `State`), **action commands** (`OpenCmd`, `MarketCloseCmd`, `ModifyCmd`, `CancelCmd`), **strong primitives** (`Price`, `Quantity`, `Tick`, `Volume`, `TradeId`), **stream IDs** (`OhlcvId`, `EconomicCalendarId`, ...), **domain enums** (`Symbol`, `SpotPair`, `TradeType`, ...), **technical indicators** (`StreamingSma`, `StreamingEma`, `StreamingRsi`, ...), **errors** (`ChapatyResult`), and **I/O configs** (`FileConfig`).
+This brings in everything you need: **Core traits and states** (`Agent`, `Environment`, `Observation`, `Actions`, `State`), **action commands** (`OpenCmd`, `MarketCloseCmd`, `ModifyCmd`, `CancelCmd`), **strong primitives** (`Price`, `Quantity`, `Tick`, `Volume`, `TradeId`), **stream IDs** (`OhlcvId`, `EconomicCalendarId`, ...), **domain enums** (`Symbol`, `SpotPair`, `TradeKind`, ...), **technical indicators** (`StreamingSma`, `StreamingEma`, `StreamingRsi`, ...), **errors** (`ChapatyResult`), and **I/O configs** (`FileConfig`).
 
 _Tip: You can read the `src/agents/demo/agent.rs` file in this repository for a complete, simple reference implementation of a Stop-and-Reverse strategy._
 
@@ -62,7 +62,7 @@ To be 100% safe, always verify that the market has a resolved price before execu
 
 ```rust
 // Safely check if the market has data before acting
-let current_price = match obs.market_view.try_resolved_close_price(&self.symbol) {
+let current_price = match obs.market_view.try_resolved_close_price(self.symbol) {
     Ok(price) => price.0,
     Err(_) => return Ok(Actions::no_op()), // Market is closed or hasn't started streaming yet
 };
@@ -109,7 +109,7 @@ Query the world state (`market_view`) and portfolio state (`states`).
 ```rust
 // --- Temporal & Price ---
 let ts = obs.market_view.current_timestamp();                                   // DateTime<Utc>
-let last_price = obs.market_view.try_resolved_close_price(&ohlcv_id.symbol)?;   // ChapatyResult<Price>
+let last_price = obs.market_view.try_resolved_close_price(ohlcv_id.symbol)?;   // ChapatyResult<Price>
 
 // --- Scanning History (rev_iter goes Newest -> Oldest) ---
 let candle = obs.market_view.ohlcv().last_event(&ohlcv_id);                     // Option<&Ohlcv>
@@ -140,7 +140,7 @@ self.trade_counter += 1;
 let cmd = OpenCmd {
     agent_id: self.identifier(),
     trade_id: TradeId(self.trade_counter),
-    trade_type: TradeType::Long,       // or ::Short
+    trade_type: TradeKind::Long,       // or ::Short
     quantity: Quantity(1.0),
     entry_price: None,                 // None = market order; Some(Price(x)) = limit
     stop_loss: Some(Price(stop)),

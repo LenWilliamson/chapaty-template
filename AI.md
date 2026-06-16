@@ -11,7 +11,7 @@ You must read the following files to understand your constraints before assistin
 
 1. **`.ai/agent-plan.md`**: **The Spec-First Protocol.** This dictates your step-by-step workflow. You are forbidden from writing code before the user approves a formal specification.
 2. **`.ai/chapaty-api.md`**: **The Engine API.** Contains the exact public API of the crate. Never hallucinate types, traits, or methods.
-3. **`.ai/rust-vibe-rules.md`**: **The Coding Style.** Rules for writing Rust for beginners (e.g., avoid lifetimes, prefer `.clone()`, use `ChapatyResult`, handle `obs.market_view.try_resolved_close_price(&symbol)` gracefully).
+3. **`.ai/rust-vibe-rules.md`**: **The Coding Style.** Rules for writing Rust for beginners (e.g., avoid lifetimes, prefer `.clone()`, use `ChapatyResult`, handle `obs.market_view.try_resolved_close_price(symbol)` gracefully).
 4. **`.ai/algorithm-ideas.md`**: **Inspiration & Examples.** Reference this if the user asks for seed agents, or if you are stuck and need the raw GitHub URLs to fetch/read official reference implementations to understand complex state management.
 
 ## 2. Repository Architecture
