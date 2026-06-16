@@ -125,7 +125,8 @@ If you need to pin your repository to a historical version, you can check out a 
 
 | Template Tag | Core `chapaty` Version | Notes         |
 | ------------ | ---------------------- | ------------- |
-| `v1.2.1+x`   | `1.2.1`                | Active Stable |
+| `v1.3.0+x`   | `1.3.0`                | Active Stable |
+| `v1.2.1+x`   | `1.2.1`                | Legacy        |
 | `v1.2.0+x`   | `1.2.0`                | Legacy        |
 | `v1.1.4+x`   | `1.1.4`                | Legacy        |
 | `v1.1.3+x`   | `1.1.3`                | Legacy        |

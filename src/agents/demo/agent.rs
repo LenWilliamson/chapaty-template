@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use itertools::iproduct;
 use serde::Serialize;
 
-use chapaty::prelude::*;
+use chapaty::{StreamingIndicator, prelude::*};
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DemoAgent {
@@ -40,8 +40,8 @@ impl DemoAgent {
             ohlcv_id,
             fast_period,
             slow_period,
-            fast_sma: StreamingSma::new(fast_period),
-            slow_sma: StreamingSma::new(slow_period),
+            fast_sma: StreamingSma::new(SmaWindow(fast_period)),
+            slow_sma: StreamingSma::new(SmaWindow(slow_period)),
             trade_counter: 0,
             current_fast: None,
             current_slow: None,
@@ -94,9 +94,9 @@ impl Agent for DemoAgent {
 
         // 5a. Determine the Target State
         let desired_dir = if fast > slow {
-            Some(TradeType::Long)
+            Some(TradeKind::Long)
         } else if fast < slow {
-            Some(TradeType::Short)
+            Some(TradeKind::Short)
         } else {
             None // fast == slow, no clear signal
         };
@@ -122,7 +122,7 @@ impl Agent for DemoAgent {
 }
 
 impl DemoAgent {
-    fn open(&mut self, trade_type: TradeType) -> Action {
+    fn open(&mut self, trade_type: TradeKind) -> Action {
         self.trade_counter += 1;
         Action::Open(OpenCmd {
             agent_id: self.identifier(),

@@ -1,4 +1,4 @@
-use chapaty::prelude::*;
+use chapaty::{StreamingIndicator, prelude::*};
 use chrono::{DateTime, Utc};
 use itertools::iproduct;
 use serde::Serialize;
@@ -38,7 +38,7 @@ impl Demo2Agent {
             sl_pct: 0.75,
             tp_crv: 2.0,
             trade_qty: 1.0,
-            sma: StreamingSma::new(default_volmalen as u16),
+            sma: StreamingSma::new(SmaWindow(default_volmalen as u16)),
             current_volma: None,
             trade_counter: 0,
             last_processed_ts: None,
@@ -48,7 +48,7 @@ impl Demo2Agent {
 
     pub fn with_volmalen(self, volmalen: usize) -> Self {
         Self {
-            sma: StreamingSma::new(volmalen as u16),
+            sma: StreamingSma::new(SmaWindow(volmalen as u16)),
             volmalen,
             ..self
         }
@@ -87,7 +87,7 @@ impl Agent for Demo2Agent {
         let market_view = &obs.market_view;
 
         // 1. Safe fetch of current price for entry/stops
-        let current_price = match market_view.try_resolved_close_price(&self.ohlcv_id.symbol) {
+        let current_price = match market_view.try_resolved_close_price(self.ohlcv_id.symbol) {
             Ok(price) => price.0,
             Err(_) => return Ok(Actions::no_op()),
         };
@@ -116,8 +116,8 @@ impl Agent for Demo2Agent {
         }
 
         let signal_dir = match candle.direction() {
-            CandleDirection::Bullish => TradeType::Long,
-            CandleDirection::Bearish => TradeType::Short,
+            CandleDirection::Bullish => TradeKind::Long,
+            CandleDirection::Bearish => TradeKind::Short,
             CandleDirection::Doji => return Ok(Actions::no_op()),
         };
 
@@ -157,13 +157,13 @@ impl Agent for Demo2Agent {
 }
 
 impl Demo2Agent {
-    fn open(&mut self, trade_type: TradeType, range: f64, current_price: f64) -> Action {
+    fn open(&mut self, trade_type: TradeKind, range: f64, current_price: f64) -> Action {
         self.trade_counter += 1;
 
         let sl_dist = range * self.sl_pct;
         let tp_dist = sl_dist * self.tp_crv;
 
-        let (sl, tp) = if trade_type == TradeType::Long {
+        let (sl, tp) = if trade_type == TradeKind::Long {
             (
                 self.ohlcv_id
                     .symbol
