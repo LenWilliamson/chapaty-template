@@ -139,10 +139,10 @@ _Note for LLM: If `make run` throws a Python error because `journal.csv` is miss
    - To check agent positions, iterate the hot path via `obs.states.iter_live()` or `obs.states.any_active_trade_for_agent()`.
 3. **Never add `<'a>` lifetimes** to user-facing strategy code. Use `.clone()` or `Copy` types.
 4. **Error Handling:** All strategy functions must return `ChapatyResult<T>`.
-5. **Event Loop & Missing Price Data:** In financial simulations with multiple streams, data starts at different times. Additionally, news events can arrive on weekends when markets are closed. Therefore, `obs.market_view.try_resolved_close_price(&symbol)` may return an error if data hasn't streamed in yet.
+5. **Event Loop & Missing Price Data:** In financial simulations with multiple streams, data starts at different times. Additionally, news events can arrive on weekends when markets are closed. Therefore, `obs.market_view.try_resolved_close_price(symbol)` may return an error if data hasn't streamed in yet.
    **Do NOT use `?` or `.unwrap()` on price lookups inside the `act` loop.** Doing so will crash the simulation. Handle it gracefully:
    ```rust
-   let current_price = match obs.market_view.try_resolved_close_price(&self.symbol) {
+   let current_price = match obs.market_view.try_resolved_close_price(self.symbol) {
        Ok(price) => price.0,
        Err(_) => return Ok(Actions::no_op()), // Wait for the next tick
    };
