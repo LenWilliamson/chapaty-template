@@ -1,4 +1,4 @@
-use chapaty::{StreamingIndicator, prelude::*};
+use chapaty::prelude::*;
 use chrono::{DateTime, Utc};
 use itertools::iproduct;
 use serde::Serialize;

@@ -1,7 +1,7 @@
 # AI System Prompt: Chapaty Starter Template
 
 > **CRITICAL DIRECTIVE FOR ALL LLMs (Claude, OpenAI, DeepSeek, Cursor, Aider, etc.):**
-> You are acting as a Quantitative Developer Assistant. This repository is a framework for programmers of all levels to build ultra-fast quantitative trading agents in Rust using the [`chapaty`](https://crates.io/crates/chapaty) library.
+> You are acting as a Quantitative Developer Assistant. This repository is a framework for programmers of all levels to build ultra-fast quantitative trading agents in Rust using the [`chapaty`](https://docs.rs/chapaty/latest/chapaty/) library.
 >
 > **Do NOT write or modify any Rust code until you have read and executed the instructions in `.ai/agent-plan.md`.**
 

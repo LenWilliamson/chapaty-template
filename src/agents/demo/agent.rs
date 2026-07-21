@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use itertools::iproduct;
 use serde::Serialize;
 
-use chapaty::{StreamingIndicator, prelude::*};
+use chapaty::prelude::*;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DemoAgent {
