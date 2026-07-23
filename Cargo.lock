@@ -595,6 +595,7 @@ dependencies = [
  "chrono-tz",
  "dirs",
  "itertools 0.14.0",
+ "rand 0.10.2",
  "serde",
  "strum",
  "time",

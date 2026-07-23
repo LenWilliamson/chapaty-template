@@ -12,7 +12,11 @@ chrono = "0.4"
 chrono-tz = "0.10"
 dirs = "6.0"
 itertools = "0.14.0"
+rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 strum = { version = "0.28", features = ["derive"] }
 time = { version = "0.3", features = ["macros", "formatting"] }
 tokio = "1.52"
+
+[profile.release]
+debug = 1

@@ -1,8 +1,9 @@
 use anyhow::{Context, Result};
 use chapaty::prelude::*;
+use rand::seq::SliceRandom;
 use serde::Serialize;
-use std::path::Path;
-use strum::{AsRefStr, EnumString};
+use std::{path::Path, str::FromStr, sync::LazyLock};
+use strum::{AsRefStr, Display, EnumString};
 
 use crate::agents::{
     demo::{DemoAgent, DemoAgentGrid},
@@ -11,17 +12,33 @@ use crate::agents::{
 
 mod agents;
 
-/// Which agent to run. Change this one line to switch.
-const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo;
-
-/// Max number of top performers to retain in the leaderboard.
-const LEADERBOARD_TOP_K: usize = 100;
+/// Number of agents randomly selected from the agent grid.
+static GRID_SEARCH_LIMIT: LazyLock<u32> = LazyLock::new(|| {
+    std::env::var("GRID_SEARCH_LIMIT")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(100)
+});
 
 /// Root directory for all generated reports.
-const REPORTS_ROOT: &str = "chapaty/reports";
+static RESULTS_DIR: LazyLock<String> = LazyLock::new(|| {
+    std::env::var("RESULTS_DIR").unwrap_or_else(|_| "chapaty/reports".to_string())
+});
+
+/// Which agent to run. Change this one line to switch.
+static ACTIVE_AGENT: LazyLock<ActiveAgent> = LazyLock::new(|| {
+    std::env::var("ACTIVE_AGENT")
+        .ok()
+        .and_then(|s| ActiveAgent::from_str(s.trim()).ok())
+        .unwrap_or(ActiveAgent::Demo)
+});
+
+/// Directory for logs.
+static LOG_DIR: LazyLock<String> =
+    LazyLock::new(|| std::env::var("LOG_DIR").unwrap_or_else(|_| "chapaty/logs".to_string()));
 
 /// Available agents. Add a variant + a match arm in `main` to register a new one.
-#[derive(Debug, Clone, Copy, AsRefStr, EnumString)]
+#[derive(Debug, Clone, Copy, AsRefStr, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 enum ActiveAgent {
     Demo,
@@ -34,10 +51,10 @@ async fn main() -> Result<()> {
     let mut env = environment().await?;
     let ohlcv = ohlcv_id();
 
-    let reports_dir = Path::new(REPORTS_ROOT).join(ACTIVE_AGENT.as_ref());
+    let reports_dir = Path::new(&*RESULTS_DIR).join(ACTIVE_AGENT.as_ref());
     let file_cfg = FileConfig::default().with_dir(&reports_dir);
 
-    match ACTIVE_AGENT {
+    match *ACTIVE_AGENT {
         ActiveAgent::Demo => run_workflow(
             &mut env,
             &file_cfg,
@@ -126,9 +143,17 @@ where
     println!(">> {label} baseline backtest complete.");
 
     println!(">> Evaluating agents in parallel...");
-    let leaderboard = env.evaluate_agents(grid, LEADERBOARD_TOP_K)?;
+    let top_k = (*GRID_SEARCH_LIMIT / 10).max(100);
+    let grid_subset = select_grid_subset(grid);
+    let leaderboard = env.evaluate_agents(grid_subset, top_k as usize)?;
     leaderboard.to_file_sync(file_cfg)?;
     println!(">> {label} grid evaluation complete. Leaderboard saved.");
 
     Ok(())
+}
+
+pub fn select_grid_subset<T>(mut agents: Vec<(usize, T)>) -> Vec<(usize, T)> {
+    agents.shuffle(&mut rand::rng());
+    agents.truncate(*GRID_SEARCH_LIMIT as usize);
+    agents
 }
