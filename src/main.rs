@@ -45,7 +45,6 @@ enum ActiveAgent {
 #[tokio::main]
 async fn main() {
     crash::install_panic_hook();
-
     if let Err(err) = run().await {
         crash::handle_fatal_error(err).await;
     }

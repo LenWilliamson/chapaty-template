@@ -1,4 +1,4 @@
-use std::{panic, sync::LazyLock};
+use std::{backtrace::Backtrace, panic, sync::LazyLock};
 
 use anyhow::{Result, bail};
 use object_store::{ObjectStoreExt, gcp::GoogleCloudStorageBuilder, path::Path as ObjectPath};
@@ -26,35 +26,26 @@ pub fn install_panic_hook() {
         // Keep the default formatting/behavior (stderr message, location, etc.).
         default_hook(info);
 
-        let Some(dir) = GCP_CRASH_LOG_DIR.as_deref() else {
-            return;
-        };
+        if let Some(dir) = GCP_CRASH_LOG_DIR.as_deref() {
+            let path = format!("{}/execution_stderr.txt", dir.trim_end_matches('/'));
+            let body = format!("{info}\n\nStack Backtrace:\n{}", Backtrace::capture());
 
-        let path = format!("{}/execution_stderr.txt", dir.trim_end_matches('/'));
-        let body = info.to_string();
-
-        // Panic hooks are sync and may run on any thread, including outside
-        // the Tokio runtime's context, so spin up a throwaway single-thread
-        // runtime to drive the upload rather than trying to reuse the main one.
-        match tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(rt) => rt.block_on(async {
-                if let Err(e) = upload_to_gcs(&path, body).await {
-                    eprintln!("!! Failed to upload panic log to {path}: {e:?}");
-                }
-            }),
-            Err(e) => eprintln!("!! Failed to start runtime for panic log upload: {e:?}"),
+            // Spin up a throwaway single-thread runtime to upload the panic log.
+            match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt.block_on(async {
+                    if let Err(e) = upload_to_gcs(&path, body).await {
+                        eprintln!("!! Failed to upload panic log to {path}: {e:?}");
+                    }
+                }),
+                Err(e) => eprintln!("!! Failed to start runtime for panic log upload: {e:?}"),
+            }
         }
-    }));
 
-    // A main-thread panic already unwinds and kills the process on its own,
-    // but with exit code 101, not 1 — and a panic inside a spawned task
-    // wouldn't kill the process at all. Force a consistent exit(1) so every
-    // crash path (Err or panic, main thread or spawned task) behaves the
-    // same way as `handle_fatal_error`.
-    std::process::exit(1);
+        std::process::exit(1);
+    }));
 }
 
 /// Uploads `body` to `{GCP_CRASH_LOG_DIR}/execution_stderr.txt`. A no-op when

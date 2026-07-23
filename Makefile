@@ -48,7 +48,7 @@ run:
 	echo ">> Active agent: $$AGENT"; \
 	echo ">> Running Chapaty backtest natively (target-cpu=native) with increased stack size of 64MiB..."; \
 	echo ">> (See .ai/rust-vibe-rules.md for RUST_MIN_STACK sizing guidance.)"; \
-	RUSTFLAGS="$(CARGO_RUSTFLAGS)" RUST_MIN_STACK=67108864 cargo run --release && \
+	RUSTFLAGS="$(CARGO_RUSTFLAGS)" RUST_MIN_STACK=67108864 RUST_BACKTRACE=1 cargo run --release && \
 	echo ">> Generating QuantStats tearsheet for agent: $$AGENT" && \
 	$(VENV_PYTHON) visualization/generate_tearsheet.py $$AGENT
 	@echo ">> Run completed."
