@@ -21,7 +21,10 @@ If the user is completely stuck and doesn't know what to build, guide them to `.
 1. Read `src/agents/<name>/spec.md` exactly as the user wrote it.
 2. Read `.ai/chapaty-api.md` to understand the 80/20 core building blocks of the `chapaty` engine.
 3. Read `.ai/rust-vibe-rules.md` to understand the Rust style required in this repo.
-4. Identify the asset, timeframe, and required data. Propose an `EnvPreset` (e.g., `BinanceBtcUsdt1d`).
+4. **Read the actual chapaty source for every indicator or API you plan to use** (see `AI.md § 1a`).
+   Identify which types the spec requires (e.g., `StreamingHhll`, `StreamingFairValueGap`, `MarketView`), then read each corresponding source file from the resolved-version registry path before writing any code.
+   Do not rely on `chapaty-api.md` alone. It is incomplete by design.
+5. Identify the asset, timeframe, and required data. Propose an `EnvPreset` (e.g., `BinanceBtcUsdt1d`).
    - **Data-Agnostic Fallback:** Chapaty's logic is data-agnostic. If a user wants to trade an unsupported asset (e.g., a specific stock), tell them to request the data in Discord, but **proceed immediately** using a placeholder preset (like BTC-USDT). The trading logic remains identical; they will only need to swap the `MarketId` once their data is available.
 
 ## Phase 2: Clarify & Parametrize
@@ -38,6 +41,8 @@ The `chapaty` engine is built for evaluating agents in parallel.
 
 - Every "magic number" (e.g., SL/TP percentages, RSI thresholds, wait durations) must be a field on the Agent struct, allowing the generation of a parametrized grid for parallel backtesting.
 - The Agent struct must derive `Clone, Serialize, Debug`.
+- **Hard rule:** Numeric float axes use `GridAxis`; integer axes use standard iterator/range patterns; categorical sets use explicit `Vec`/array values.
+- **GridAxis is for float ranges; integer grids should use standard iterators.**
 
 ## Phase 3: Rewrite Spec & Halt
 
@@ -133,7 +138,7 @@ _Note for LLM: If `make run` throws a Python error because `journal.csv` is miss
 
 ## Hard Engine Rules & Constraints
 
-1. **Never invent `chapaty` types.** If `.ai/chapaty-api.md` doesn't cover what you need, ask the user to provide the Rust documentation for the required module.
+1. **Never invent `chapaty` types.** If `.ai/chapaty-api.md` doesn't cover what you need, read the source directly from `~/.cargo/registry/src/chapaty-<VERSION>/src/` (resolve the version first via `cargo metadata` — see `AI.md § 1a`). Only ask the user if the source is unavailable.
 2. **Observation Space Rules:**
    - To scan price history, use `obs.market_view.ohlcv().rev_iter(id)` (searches newest to oldest).
    - To check agent positions, iterate the hot path via `obs.states.iter_live()` or `obs.states.any_active_trade_for_agent()`.

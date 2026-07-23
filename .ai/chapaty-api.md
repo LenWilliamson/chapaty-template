@@ -107,22 +107,54 @@ _Idiomatic naming:_ `AgentIdentifier::Named(Arc::new("MyAgent".to_string()))`
 Query the world state (`market_view`) and portfolio state (`states`).
 
 ```rust
-// --- Temporal & Price ---
+// === Temporal & Price ===
 let ts = obs.market_view.current_timestamp();                                   // DateTime<Utc>
-let last_price = obs.market_view.try_resolved_close_price(ohlcv_id.symbol)?;   // ChapatyResult<Price>
+let prev_ts = obs.market_view.previous_timestamp();                             // DateTime<Utc>
+let last_price = obs.market_view.try_resolved_close_price(ohlcv_id.symbol)?;    // ChapatyResult<Price>
 
-// --- Scanning History (rev_iter goes Newest -> Oldest) ---
-let candle = obs.market_view.ohlcv().last_event(&ohlcv_id);                     // Option<&Ohlcv>
-let sma = obs.market_view.sma().last_event(&sma_id);                            // Option<&Sma>
-let news = obs.market_view.economic_news().last_event(&cal_id);                 // Option<&EconomicEvent>
+// === Full Slice Access (StreamView trait) ===
+// get_slice returns ALL events up to and including the current timestep.
+// Use this to look up any historical candle by index — NO manual ring buffer needed.
+let slice: Option<&[Ohlcv]> = obs.market_view.ohlcv().get_slice(&ohlcv_id);    // Option<&[Ohlcv]>
+let len: usize = obs.market_view.ohlcv().len(&ohlcv_id);                       // total event count so far
+let last = obs.market_view.ohlcv().last_event(&ohlcv_id);                      // Option<&Ohlcv>  (= slice.last())
 
-// --- Portfolio State ---
-let in_trade = obs.states.any_active_trade_for_agent(&self.identifier());       // bool
+// Iterate history newest-to-oldest (efficient: stop early with take_while/find)
+if let Some(iter) = obs.market_view.ohlcv().rev_iter(&ohlcv_id) {
+    let prev_candle = iter.nth(1); // second-to-last candle
+}
+
+// Only events newer than a known timestamp (e.g. last step's previous_ts)
+if let Some(new_events) = obs.market_view.ohlcv().new_events_since(&ohlcv_id, prev_ts) {
+    for candle in new_events { /* process */ }
+}
+
+// Access a specific historical candle by global index (0 = oldest, len-1 = newest):
+let current_index = obs.market_view.ohlcv().len(&ohlcv_id).saturating_sub(1);
+if let Some(slice) = obs.market_view.ohlcv().get_slice(&ohlcv_id) {
+    let some_past_candle: Option<&Ohlcv> = slice.get(current_index.saturating_sub(3));
+}
+
+// Batch-computed indicators (pre-configured in env, no streaming needed):
+let atr = obs.market_view.atr().last_event(&atr_id);                           // Option<&AtrEvent>
+let roc = obs.market_view.roc().last_event(&roc_id);                           // Option<&RocEvent>
+let sma = obs.market_view.sma().last_event(&sma_id);                           // Option<&SmaEvent>
+let news = obs.market_view.economic_news().last_event(&cal_id);                // Option<&EconomicEvent>
+
+// Price-check: did any stream reach `price` between the previous and current step?
+let was_hit = obs.market_view.reached_price(price, symbol, TradeKind::Long);   // bool
+
+// === Portfolio State ===
+let in_trade = obs.states.any_active_trade_for_agent(&self.identifier());      // bool
+// find_active_trade_for_agent returns the live trade + its market context:
+if let Some((_, active_trade)) = obs.states.find_active_trade_for_agent(&self.agent_id) {
+    let id: TradeId = active_trade.trade_id();
+}
 ```
 
 **Key Event Payloads:**
 
-- **`Ohlcv`**: `.open`, `.high`, `.low`, `.close` (all `Price`), `.volume`. Helper: `.direction()`.
+- **`Ohlcv`**: `.open`, `.high`, `.low`, `.close` (all `Price`), `.volume` (`Volume`), `.open_timestamp`, `.close_timestamp` (`DateTime<Utc>`). Helper: `.direction()`.
 - **`TradeEvent`**: `.price`, `.quantity`, `.is_buyer_maker`. _(Note: This is the raw market execution, do not confuse with the agent's internal `Trade` state)._
 - **`EconomicEvent`**: `.actual`, `.forecast`, `.previous`, `.economic_impact`.
 - **`VolumeProfile` / `Tpo`**: `.poc`, `.value_area_high`, `.value_area_low`.
@@ -181,6 +213,26 @@ journal.trade_stats()?.to_file(cfg)?;
 > 2. **API:** Pass the `Vec` directly to `evaluate_agents`. The environment natively handles parallelization (`rayon`) and smooth progress tracking.
 > 3. **Runtime Estimation:** For massive grid searches (1M+ agents), benchmark a single representative agent first using `env.evaluate_agent()` to estimate total parallel wait time.
 
+**Grid axis boundary (must-follow):**
+
+- **GridAxis is for float ranges; integer grids should use standard iterators.**
+- Use `GridAxis` when generating decimal/float ranges (`0.1`, `0.05`, etc.).
+- Use `start..end`, `start..=end`, arrays, or `Vec` for integer/categorical axes.
+
+**Do / Don't**
+
+```rust
+// DO: float axis via GridAxis
+let sl_axis = GridAxis::new("0.8", "2.1", "0.1")?; // end is exclusive
+let sl_values = sl_axis.generate();
+
+// DO: integer axis via standard iterators
+let lookbacks = (14..=60).step_by(2).map(i64::from).collect();
+
+// ❌ DON'T: use GridAxis for integer-only ranges
+// let lookback_axis = GridAxis::new("14", "61", "1")?;
+```
+
 ```rust
 // 1. Grid Builder implementation
 pub fn build(self) -> Vec<(usize, MyAgent)> {
@@ -207,6 +259,25 @@ let leaderboard = env.evaluate_agents(
 leaderboard.to_file_sync(&FileConfig::default())?;
 ```
 
+**Canonical GridAxis API + mixed-grid example:**
+
+```rust
+use itertools::iproduct;
+
+pub fn build(self) -> ChapatyResult<Vec<(usize, MyAgent)>> {
+    // Float axis -> GridAxis
+    let sl_mults = GridAxis::new("0.8", "2.1", "0.1")?.generate(); // end-exclusive
+
+    // Integer axis -> standard iterators
+    let lookback_days: Vec<i64> = vec![14, 20, 30, 45, 60];
+
+    Ok(iproduct!(sl_mults, lookback_days)
+        .enumerate()
+        .map(|(uid, (sl_mult, lookback))| (uid, MyAgent::new(sl_mult, lookback)))
+        .collect::<Vec<(usize, MyAgent)>>())
+}
+```
+
 ## 9. Canonical Gym Loop (For custom researchers)
 
 If you need full control over the step transition rather than using `evaluate_agent()`:
@@ -226,27 +297,131 @@ drop(obs);
 let journal = env.journal()?;
 ```
 
-## 10. Indicators
+## 10. Indicators: Batch vs. Streaming
 
-The `StreamingIndicator` trait (available via `chapaty::prelude`) defines a unified interface for incremental technical indicators. The engine provides several built-in implementations, such as `StreamingSma`, `StreamingEma`, `StreamingRsi`, `StreamingFairValueGap`, `StreamingHhll`, etc.
+Chapaty has **two distinct indicator systems**. Choosing the right one matters for performance and correctness.
 
-Idiomatic usage involves storing the indicator within your agent's state and invoking `.update(input)` on each tick or candle. Because many indicators require a minimum number of data points to "warm up," the `Output` is typically an `Option<T>`, yielding `Some(value)` only once the required window is filled.
+### 10a. Batch Indicators (preferred when applicable)
+
+Batch indicators are **pre-computed at environment construction time** over the entire dataset. During `act()`, reading them is O(1) — no agent state required.
+
+**When to use batch:**
+
+- The indicator is stateless (SMA, ATR, ROC, EMA, RSI, VWAP, session ranges) — essentially anything that can be computed as a rolling window over a sorted price series.
+- The parameter does NOT vary across grid-search runs (or you're willing to reload the env per grid point).
+
+**When NOT to use batch:**
+
+- The indicator is sequential and order-dependent (e.g. FVG, HHLL), these cannot be precomputed in bulk.
+- The parameter DOES vary across grid-search runs and reloading the env is too slow. In that case, use a streaming indicator inside the agent (the env stays the same; only the agent resets between runs).
+
+**Cost:** each configured batch indicator increases environment memory. If you add 100 SMA variants, the env stores 100 × N precomputed values. Keep grids over batch indicator parameters small or batch only the fixed parameters.
+
+**Structural pattern — how to discover what batch indicators exist:**
+
+The batch system follows a strict naming convention. For every data source type there is a corresponding enum in `indicator/batch/`:
+
+| Data source query  | Batch enum             | Source file                 |
+| ------------------ | ---------------------- | --------------------------- |
+| `OhlcvFutureQuery` | `BatchOhlcvIndicator`  | `indicator/batch/ohlcv.rs`  |
+| `OhlcvSpotQuery`   | `BatchOhlcvIndicator`  | `indicator/batch/ohlcv.rs`  |
+| `TradesQuery`      | `BatchTradesIndicator` | `indicator/batch/trades.rs` |
+
+**Before assuming a batch indicator does not exist, read the corresponding source file.** The variants inside the enum are the ground truth. Do not guess from memory.
+
+**Configure (in `env()`)** by pushing variants onto the query's `indicators` field. The full variant set lives in the source file above — read it, don't guess:
 
 ```rust
-/// A generic trait for incremental indicators.
-/// Designed to be object-safe so agents can hold `Box<dyn StreamingIndicator<Input=I, Output=O>>`.
-pub trait StreamingIndicator: std::fmt::Debug + Send + Sync {
-    type Input;
-    type Output<'a>
-    where
-        Self: 'a;
+let query = OhlcvFutureQuery {
+    // ...
+    indicators: vec![
+        BatchOhlcvIndicator::Sma(SmaWindow(20)),
+        // Atr, RateOfChange, Rsi, OvernightRange, … — see indicator/batch/ohlcv.rs
+    ],
+};
+```
 
-    /// Update the indicator with the latest data point.
-    fn update(&mut self, input: Self::Input) -> Self::Output<'_>;
+**Access (in `act()`)** by building the ID struct that mirrors the config, then querying the matching `market_view` accessor. ID and accessor names follow the indicator name (`SmaId` → `.sma()`, `AtrId` → `.atr()`):
 
-    /// Reset the internal state to clear history (e.g., for a new trading session).
-    fn reset(&mut self);
+```rust
+let sma_id = SmaId { parent: m15_ohlcv_id, length: SmaWindow(20) };
+if let Some(sma) = obs.market_view.sma().last_event(&sma_id) {
+    let value: f64 = sma.price.0;
 }
+```
+
+**Event field gotchas.** The value field is NOT always `.price`. Confirm against the struct, but these are the ones that silently return wrong numbers:
+
+| Indicator     | ID struct        | Accessor           | Value field                        |
+| ------------- | ---------------- | ------------------ | ---------------------------------- |
+| SMA           | `SmaId`          | `.sma()`           | `.price: Price`                    |
+| ATR           | `AtrId`          | `.atr()`           | `.range: PriceDelta` (NOT `price`) |
+| ROC           | `RocId`          | `.roc()`           | `.percentage: f64`                 |
+| Session range | `OhlcvSessionId` | `.ohlcv_session()` | `.high`, `.low: Price`             |
+
+### 10b. Streaming Indicators (use when batch is not applicable)
+
+All streaming indicators share one trait: store the indicator on the agent (`#[serde(skip)]`), call `.update(input)` once per new candle, and `.reset()` at the start of an episode. `update` returns a borrowed `Output` that is usually `Option<T>` — `None` until the indicator warms up.
+
+> **GOTCHA — In `Agent::reset()`, call `indicator.reset()`. Never reconstruct.**
+> Every streaming indicator provides `.reset()`, which clears state while preserving its configuration. Rebuilding it (`self.roc = StreamingRateOfChange::new(...)`) is an antipattern: it forces you to re-thread every config parameter by hand, and a single mismatch silently changes the indicator between episodes.
+>
+> ```rust
+> fn reset(&mut self) {
+>     self.vol_sma.reset();        // ✅ clears state, keeps SmaWindow(15)
+>     self.roc.reset();            // ✅
+>     // ❌ NOT: self.roc = StreamingRateOfChange::new(LookbackWindow::Time(...))?;
+>     self.prev_close = None;      // plain agent state still reset by hand
+> }
+> ```
+
+> **GOTCHA — Episode length is a hard floor on indicator warmup.**
+> The engine resets the agent (and therefore its streaming indicators) at every episode boundary, and within one episode the agent only ever sees that episode's candles. So an indicator can **never** warm up across more time than one episode spans. If `with_episode_length(EpisodeLength::Week)` but a `LookbackWindow::Time(Duration::days(30))` ROC needs 30 days, it returns `None` for the entire 7-day episode — **forever, every episode → zero trades.** Pick an `EpisodeLength` that comfortably exceeds your longest warmup (e.g. `Annual`/`Infinite` for a 30-day trend filter; `Quarter` is the bare minimum). Note `LookbackWindow::Bars(n)` warms in `n` candles (time-cheap on intraday data), whereas `Time(d)` warms only after the buffer spans the full duration `d`.
+
+**The builder methods and accessors are discoverable from the source — read `indicator/streaming/<name>.rs` (see `AI.md § 1a`) for the full set.** Documented below is only what a source signature does NOT reveal: calling conventions and the gotchas that caused real bugs.
+
+#### StreamingSma
+
+Window size is the `SmaWindow` newtype — never a bare integer. Output is `Option<f64>`.
+
+```rust
+let vol_sma = StreamingSma::new(SmaWindow(15)); // NOT StreamingSma::new(15)
+```
+
+#### StreamingHhll
+
+`Input = IndexedOhlcv`, `Output = Option<(MarketStructureEvent, PivotPoint)>`. Two non-obvious bits: **you supply the global index yourself**, and the pivot kind comes via `pivot.trend.as_pivot_type()` — not a direct field.
+
+```rust
+let m15_index = obs.market_view.ohlcv().len(&m15_id).saturating_sub(1);
+if let Some((evt, pivot)) = hhll.update(IndexedOhlcv { index: m15_index, candle: *candle }) {
+    // evt: MarketStructureEvent::{BreakOfStructure | MarketStructureShift | NoChange}
+    let kind: PivotType = pivot.trend.as_pivot_type(); // ::High | ::Low
+}
+```
+
+#### StreamingFairValueGap
+
+`Input = IndexedOhlcv`, `Output = &[FairValueGap<OpenState>]` (the currently-open gaps).
+
+**The semantic source signatures will NOT tell you:** `with_price_source` controls the **fill condition only**. Gap boundaries are **always wick-based** (`top = rhs.low`, `bottom = lhs.high`) — that is the definition of an FVG.
+
+- `PriceSource::HighLow` (default): filled when a **wick** reaches the boundary.
+- `PriceSource::OpenClose`: filled only when the **candle body** reaches it (stricter; wick-only touches don't count).
+
+**Do NOT build a manual ring buffer** to recover the candles around a gap. `creation_index()` is the global index of the right-hand candle, so index the live slice directly:
+
+```rust
+let fvg = StreamingFairValueGap::default()
+    .with_price_source(PriceSource::OpenClose)
+    .with_ttl_policy(TtlPolicy::Filled); // gap expires once filled (default)
+
+let m15_index = obs.market_view.ohlcv().len(&m15_id).saturating_sub(1);
+let active = fvg.update(IndexedOhlcv { index: m15_index, candle: *candle }); // &[FairValueGap<OpenState>]
+
+// SL reference = candle before the left FVG candle (creation_index - 3):
+let slice = obs.market_view.ohlcv().get_slice(&m15_id).unwrap_or(&[]);
+let sl_ref = slice.get(gap.creation_index().saturating_sub(3)); // Option<&Ohlcv>
 ```
 
 **Custom Indicators:** If the user requires Technical Analysis (TA) that is not available out of the box, do not be blocked. Implement it yourself as a stateful utility struct within the agent's file. If you do this, politely inform the user that they can submit a Pull Request to the core `chapaty` library, or drop a request in the `#data-requests` channel on Discord to make this indicator available to everyone.
