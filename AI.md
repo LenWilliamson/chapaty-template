@@ -24,6 +24,16 @@ You must read the following files to understand your constraints before assistin
 - Calling methods that don't exist, or missing methods that do.
 - Using an outdated version's API because the registry grep hit the wrong directory.
 
+### Source resolution order (must follow)
+
+1. If local IDE/CLI access exists: inspect local Cargo registry first (`~/.cargo/registry/.../chapaty-*`) and current workspace files.
+2. If local access is unavailable: fetch references from:
+   - https://github.com/LenWilliamson/chapaty
+   - https://docs.rs/chapaty/latest/chapaty/
+3. crates.io is optional metadata only:
+   - https://crates.io/crates/chapaty
+4. `curl`/web-fetch is fallback only when local registry/workspace access is not available.
+
 ### Step 1 — Find the chapaty version
 
 **Local context (shell/IDE):**

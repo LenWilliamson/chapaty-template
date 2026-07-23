@@ -139,6 +139,16 @@ _Note for LLM: If `make run` throws a Python error because `journal.csv` is miss
 ## Hard Engine Rules & Constraints
 
 1. **Never invent `chapaty` types.** If `.ai/chapaty-api.md` doesn't cover what you need, read the source directly from `~/.cargo/registry/src/chapaty-<VERSION>/src/` (resolve the version first via `cargo metadata` — see `AI.md § 1a`). Only ask the user if the source is unavailable.
+
+   **Source resolution order (must follow):**
+   1. If local IDE/CLI access exists: inspect local Cargo registry first (`~/.cargo/registry/.../chapaty-*`) and current workspace files.
+   2. If local access is unavailable: fetch references from:
+      - https://github.com/LenWilliamson/chapaty
+      - https://docs.rs/chapaty/latest/chapaty/
+   3. crates.io is optional metadata only:
+      - https://crates.io/crates/chapaty
+   4. `curl`/web-fetch is fallback only when local registry/workspace access is not available.
+
 2. **Observation Space Rules:**
    - To scan price history, use `obs.market_view.ohlcv().rev_iter(id)` (searches newest to oldest).
    - To check agent positions, iterate the hot path via `obs.states.iter_live()` or `obs.states.any_active_trade_for_agent()`.
