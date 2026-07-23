@@ -11,6 +11,7 @@ use crate::agents::{
 };
 
 mod agents;
+mod crash;
 
 /// Number of agents randomly selected from the agent grid.
 static GRID_SEARCH_LIMIT: LazyLock<u32> = LazyLock::new(|| {
@@ -33,10 +34,6 @@ static ACTIVE_AGENT: LazyLock<ActiveAgent> = LazyLock::new(|| {
         .unwrap_or(ActiveAgent::Demo)
 });
 
-/// Directory for logs.
-static LOG_DIR: LazyLock<String> =
-    LazyLock::new(|| std::env::var("LOG_DIR").unwrap_or_else(|_| "chapaty/logs".to_string()));
-
 /// Available agents. Add a variant + a match arm in `main` to register a new one.
 #[derive(Debug, Clone, Copy, AsRefStr, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
@@ -46,7 +43,18 @@ enum ActiveAgent {
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() {
+    crash::install_panic_hook();
+
+    if let Err(err) = run().await {
+        crash::handle_fatal_error(err).await;
+    }
+}
+
+/// The actual application entry point. All fallible startup/workflow logic
+/// lives here so `main` stays free to funnel every `Err` through the crash
+/// reporting path below.
+async fn run() -> Result<()> {
     println!(">> Loading environment from Hugging Face...");
     let mut env = environment().await?;
     let ohlcv = ohlcv_id();

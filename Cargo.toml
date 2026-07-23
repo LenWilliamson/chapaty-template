@@ -12,6 +12,7 @@ chrono = "0.4"
 chrono-tz = "0.10"
 dirs = "6.0"
 itertools = "0.14.0"
+object_store = {version = "0.14.1", features = ["gcp"]}
 rand = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 strum = { version = "0.28", features = ["derive"] }
