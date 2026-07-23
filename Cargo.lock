@@ -592,9 +592,12 @@ dependencies = [
  "anyhow",
  "chapaty",
  "chrono",
+ "chrono-tz",
+ "dirs",
  "itertools 0.14.0",
  "serde",
  "strum",
+ "time",
  "tokio",
 ]
 
@@ -4641,9 +4644,7 @@ dependencies = [
  "bytes",
  "libc",
  "mio",
- "parking_lot",
  "pin-project-lite",
- "signal-hook-registry",
  "socket2",
  "tokio-macros",
  "windows-sys 0.61.2",

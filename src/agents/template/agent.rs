@@ -5,7 +5,7 @@ use serde::Serialize;
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize)]
-pub struct Demo2Agent {
+pub struct TemplateAgent {
     #[serde(skip)]
     ohlcv_id: OhlcvId,
 
@@ -27,7 +27,7 @@ pub struct Demo2Agent {
     agent_id: AgentIdentifier, // Pre-computed to save allocations
 }
 
-impl Demo2Agent {
+impl TemplateAgent {
     /// Creates a new agent utilizing the defaults defined in the specification.
     pub fn new(ohlcv_id: OhlcvId) -> Self {
         let default_volmalen = 20;
@@ -71,7 +71,7 @@ impl Demo2Agent {
     }
 }
 
-impl Agent for Demo2Agent {
+impl Agent for TemplateAgent {
     fn identifier(&self) -> AgentIdentifier {
         self.agent_id.clone()
     }
@@ -156,7 +156,7 @@ impl Agent for Demo2Agent {
     }
 }
 
-impl Demo2Agent {
+impl TemplateAgent {
     fn open(&mut self, trade_type: TradeKind, range: f64, current_price: f64) -> Action {
         self.trade_counter += 1;
 
@@ -195,7 +195,7 @@ impl Demo2Agent {
     }
 }
 
-pub struct Demo2AgentGrid {
+pub struct TemplateAgentGrid {
     ohlcv_id: OhlcvId,
     volmalen: GridAxis,
     volmult: GridAxis,
@@ -203,7 +203,7 @@ pub struct Demo2AgentGrid {
     tp_crv: GridAxis,
 }
 
-impl Demo2AgentGrid {
+impl TemplateAgentGrid {
     pub fn baseline(ohlcv_id: OhlcvId) -> ChapatyResult<Self> {
         Ok(Self {
             ohlcv_id,
@@ -214,7 +214,7 @@ impl Demo2AgentGrid {
         })
     }
 
-    pub fn build(self) -> Vec<(usize, Demo2Agent)> {
+    pub fn build(self) -> Vec<(usize, TemplateAgent)> {
         let lens = self.volmalen.generate();
         let mults = self.volmult.generate();
         let sls = self.sl_pct.generate();
@@ -227,7 +227,7 @@ impl Demo2AgentGrid {
             .map(|(uid, (len, mult, sl, tp))| {
                 (
                     uid,
-                    Demo2Agent::new(ohlcv_id)
+                    TemplateAgent::new(ohlcv_id)
                         .with_volmalen(len as usize)
                         .with_volmult(mult)
                         .with_sl_pct(sl)

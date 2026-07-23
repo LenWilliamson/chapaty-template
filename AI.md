@@ -50,7 +50,6 @@ find ~/.cargo/registry/src -path "*/chapaty-$CHAPATY_VER/src" -type d
 Read `Cargo.toml` with your file-read tool to extract the version. Then use:
 
 - `https://docs.rs/chapaty/latest/chapaty/` — public API reference
-- `https://docs.rs/chapaty/latest/src/chapaty/` — full annotated source
 
 **If you have neither shell nor file/web access:** do NOT guess. Say explicitly: _"I cannot verify this API — here is my reading of the spec; please confirm before I continue."_
 

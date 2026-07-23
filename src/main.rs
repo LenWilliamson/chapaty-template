@@ -6,7 +6,7 @@ use strum::{AsRefStr, EnumString};
 
 use crate::agents::{
     demo::{DemoAgent, DemoAgentGrid},
-    demo2::{Demo2Agent, Demo2AgentGrid},
+    template::{TemplateAgent, TemplateAgentGrid},
 };
 
 mod agents;
@@ -25,7 +25,7 @@ const REPORTS_ROOT: &str = "chapaty/reports";
 #[strum(serialize_all = "lowercase")]
 enum ActiveAgent {
     Demo,
-    Demo2,
+    Template,
 }
 
 #[tokio::main]
@@ -44,11 +44,11 @@ async fn main() -> Result<()> {
             DemoAgent::new(ohlcv, 20, 50),
             DemoAgentGrid::baseline(ohlcv)?.build(),
         ),
-        ActiveAgent::Demo2 => run_workflow(
+        ActiveAgent::Template => run_workflow(
             &mut env,
             &file_cfg,
-            Demo2Agent::new(ohlcv),
-            Demo2AgentGrid::baseline(ohlcv)?.build(),
+            TemplateAgent::new(ohlcv),
+            TemplateAgentGrid::baseline(ohlcv)?.build(),
         ),
     }
 }
