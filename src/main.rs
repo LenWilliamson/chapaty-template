@@ -26,7 +26,7 @@ static RESULTS_DIR: LazyLock<String> = LazyLock::new(|| {
     std::env::var("RESULTS_DIR").unwrap_or_else(|_| "chapaty/reports".to_string())
 });
 
-/// Which agent to run. Change this one line to switch.
+/// Which agent to run.
 static ACTIVE_AGENT: LazyLock<ActiveAgent> = LazyLock::new(|| {
     std::env::var("ACTIVE_AGENT")
         .ok()
