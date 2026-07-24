@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # JOB 1: Compliance & Security (Fast, no compilation needed)
+  check-compliance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # 1. Secret Leak Prevention
+      - name: "[1/10] Security - Check for Leaked Environment Files"
+        run: |
+          if git ls-files --error-unmatch .env > /dev/null 2>&1; then
+            echo "::error::CRITICAL: .env file is being tracked by git! Remove it immediately.";
+            exit 1;
+          fi
+          echo "No secrets found in git index."
+
+      # 2. Formatting Check (Nightly rustfmt)
+      # rustfmt.toml relies on nightly-only options (imports_granularity,
+      # group_imports, wrap_comments, doc_comment_code_block_width,
+      # format_macro_bodies), which stable rustfmt silently ignores. Install
+      # nightly + rustfmt for this step only and check with it.
+      - name: "[2/10] Style - Check Formatting (Nightly)"
+        run: |
+          rustup toolchain install nightly --profile minimal --component rustfmt
+          cargo +nightly fmt --all -- --check
+
+      # 3. Dependency Sort Order (cargo-sort)
+      - name: Install cargo-sort
+        uses: taiki-e/install-action@cargo-sort
+      - name: "[3/10] Style - Check Cargo.toml Sort Order"
+        run: cargo sort --check
+
+      # 4. No local path dependency on chapaty (template-specific: consumers
+      # must depend on the published crate, not a local checkout of chapaty).
+      - name: "[4/10] Dependency - Check no local path dependency for chapaty"
+        run: |
+          if grep -E '^chapaty\s*=.*path\s*=' Cargo.toml; then
+            echo "::error::Cargo.toml contains a local path dependency for chapaty. Replace it with a versioned crates.io release: chapaty = \"<version>\"";
+            exit 1;
+          fi
+
+  # JOB 2: Build, Test, & Verify (Slower, runs only if compliance passes)
+  build-and-verify:
+    needs: check-compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup latest stable Rust, includes caching by default, and adds clippy
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          components: clippy
+
+      # 5. Install cargo-audit
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      # 5. Security Audit (Checks Cargo.lock for CVEs)
+      - name: "[5/10] Security Audit"
+        run: cargo audit
+
+      # 6. Clippy (Linter)
+      - name: "[6/10] Lint with Clippy"
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      # 7. Build (Ensures everything compiles)
+      - name: "[7/10] Build Workspace"
+        run: cargo build --all-features --verbose
+
+      # 8. Unit & Integration Tests
+      # No --doc step here: this is a binary-only crate (no src/lib.rs), and
+      # `cargo test --doc` errors with "no library targets found" on one.
+      - name: "[8/10] Run Unit and Integration Tests"
+        run: cargo test --all-features --tests --verbose
+
+      # 9. Documentation Layout (catches broken intra-doc links etc.)
+      - name: "[9/10] Verify Documentation Layout"
+        run: cargo doc --no-deps --document-private-items --all-features --verbose
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+
+      # 10. Release Build (final compile sanity check)
+      - name: "[10/10] Build Release Binary"
+        run: cargo build --release --verbose
