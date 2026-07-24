@@ -76,8 +76,9 @@ def load_equity_curve_local(reports_dir: Path) -> pd.DataFrame:
     sys.exit(1)
 
 
-def load_equity_curve_cloud(bucket_uri: str, agent: str) -> pd.DataFrame:
-    client = Client()
+def load_equity_curve_cloud(
+    client: Client, bucket_uri: str, agent: str
+) -> pd.DataFrame:
     blob = Blob.from_string(
         f"{bucket_uri.rstrip('/')}/{agent}/equity_curve.csv", client=client
     )
@@ -94,8 +95,9 @@ def load_equity_curve_cloud(bucket_uri: str, agent: str) -> pd.DataFrame:
     return pd.read_csv(io.BytesIO(blob.download_as_bytes()))
 
 
-def upload_tearsheet_cloud(output_path: Path, bucket_uri: str, agent: str) -> None:
-    client = Client()
+def upload_tearsheet_cloud(
+    client: Client, output_path: Path, bucket_uri: str, agent: str
+) -> None:
     blob = Blob.from_string(
         f"{bucket_uri.rstrip('/')}/{agent}/{output_path.name}", client=client
     )
@@ -165,9 +167,10 @@ def main() -> int:
     output_path = reports_dir / "tearsheet.html"
 
     bucket_uri = os.environ.get("RESULTS_CLOUD_BUCKET")
+    client = Client() if bucket_uri else None
 
     if bucket_uri:
-        df = load_equity_curve_cloud(bucket_uri, args.agent)
+        df = load_equity_curve_cloud(client, bucket_uri, args.agent)
     else:
         if not reports_dir.is_dir():
             print(
@@ -206,7 +209,7 @@ def main() -> int:
     print(f"[tearsheet] Wrote {output_path}")
 
     if bucket_uri:
-        upload_tearsheet_cloud(output_path, bucket_uri, args.agent)
+        upload_tearsheet_cloud(output_path, bucket_uri, args.agent, client)
 
     return 0
 
