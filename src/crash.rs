@@ -76,13 +76,7 @@ async fn upload_to_gcs(path: &str, data: String) -> Result<()> {
         .with_bucket_name(&bucket_name)
         .build()?;
 
-    // `path` arrives as the full "gs://bucket/..." address, but the store
-    // above is already locked to that one bucket. It only wants the part
-    // after the bucket name, not the bucket name again.
-    let prefix = format!("gs://{bucket_name}/");
-    let object_key = path.strip_prefix(&prefix).unwrap_or(path);
-
-    let object_path = ObjectPath::from(object_key);
+    let object_path = ObjectPath::from(path);
     store.put(&object_path, data.into()).await?;
     Ok(())
 }
