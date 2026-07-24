@@ -3,12 +3,14 @@ use std::{backtrace::Backtrace, panic, sync::LazyLock};
 use anyhow::{Result, bail};
 use object_store::{ObjectStoreExt, gcp::GoogleCloudStorageBuilder, path::Path as ObjectPath};
 
-/// Bucket-relative prefix for the crash-diagnostic upload execution_stderr.txt on a panic/error exit
+/// Bucket-relative prefix for the crash-diagnostic upload execution_stderr.txt
+/// on a panic/error exit
 static GCP_CRASH_LOG_PREFIX: LazyLock<Option<String>> =
     LazyLock::new(|| std::env::var("GCP_CRASH_LOG_PREFIX").ok());
 
 /// Prints the full error chain + backtrace to stderr for container logs,
-/// ships the same text to GCS when `GCP_CRASH_LOG_PREFIX` is configured, then exits.
+/// ships the same text to GCS when `GCP_CRASH_LOG_PREFIX` is configured, then
+/// exits.
 pub async fn handle_fatal_error(err: anyhow::Error) -> ! {
     let body = format!("{err:?}");
     eprintln!("{body}");

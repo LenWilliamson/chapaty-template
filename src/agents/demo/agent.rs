@@ -1,10 +1,9 @@
 use std::sync::Arc;
 
+use chapaty::prelude::*;
 use chrono::{DateTime, Utc};
 use itertools::iproduct;
 use serde::Serialize;
-
-use chapaty::prelude::*;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DemoAgent {

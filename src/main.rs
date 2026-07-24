@@ -1,8 +1,9 @@
+use std::{path::Path, str::FromStr, sync::LazyLock};
+
 use anyhow::{Context, Result};
 use chapaty::prelude::*;
 use rand::seq::SliceRandom;
 use serde::Serialize;
-use std::{path::Path, str::FromStr, sync::LazyLock};
 use strum::{AsRefStr, Display, EnumString};
 
 use crate::agents::{
@@ -34,7 +35,8 @@ static ACTIVE_AGENT: LazyLock<ActiveAgent> = LazyLock::new(|| {
         .unwrap_or(ActiveAgent::Demo)
 });
 
-/// Available agents. Add a variant + a match arm in `main` to register a new one.
+/// Available agents. Add a variant + a match arm in `main` to register a new
+/// one.
 #[derive(Debug, Clone, Copy, AsRefStr, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 enum ActiveAgent {
@@ -117,15 +119,17 @@ fn ohlcv_id() -> OhlcvId {
 /// # Arguments
 ///
 /// * `env` — the loaded trading [`Environment`].
-/// * `file_cfg` — destination configuration for every report this function emits.
+/// * `file_cfg` — destination configuration for every report this function
+///   emits.
 /// * `baseline` — the single agent to backtest for the tearsheet.
-/// * `grid` — `(uid, agent)` pairs to backtest in parallel. UIDs are caller-assigned and
-///   surface in the leaderboard for traceability.
+/// * `grid` — `(uid, agent)` pairs to backtest in parallel. UIDs are
+///   caller-assigned and surface in the leaderboard for traceability.
 ///
 /// # Performance
 ///
 /// Before launching a large grid, benchmark a single agent with
-/// [`Environment::evaluate_agent`] and estimate total time as: `(single_agent_time * grid.len()) / cpu_cores`.
+/// [`Environment::evaluate_agent`] and estimate total time as:
+/// `(single_agent_time * grid.len()) / cpu_cores`.
 fn run_workflow<T>(
     env: &mut Environment,
     file_cfg: &FileConfig,
