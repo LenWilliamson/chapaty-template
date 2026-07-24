@@ -171,11 +171,12 @@ async fn save_report<R>(report: &R) -> Result<()>
 where
     R: Report + ReportName + ToSchema + Sync + Send,
 {
+    let agent = ACTIVE_AGENT.as_ref();
     if let Some(bucket) = RESULTS_CLOUD_BUCKET.as_deref() {
-        let dest = uri(bucket, &format!("{}.csv", report.base_name()));
+        let dest = uri(bucket, &format!("{agent}/{}.csv", report.base_name()));
         report.to_cloud(&CloudConfig::new(dest)).await?;
     } else {
-        let reports_dir = Path::new(&*RESULTS_LOCAL_DIR).join(ACTIVE_AGENT.as_ref());
+        let reports_dir = Path::new(&*RESULTS_LOCAL_DIR).join(agent);
         report.to_file_sync(&FileConfig::default().with_dir(reports_dir))?;
     }
     Ok(())
