@@ -1,8 +1,8 @@
 # Chapaty Template
 
 [![Discord](https://img.shields.io/discord/1495690333911257108.svg?label=Discord&logo=discord&color=7289da&logoColor=white)][discord]
-[![CI (Main)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yml)
-[![CI (Develop)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yml)
+[![CI (Main)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yaml)
+[![CI (Develop)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yaml/badge.svg?branch=develop)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yaml)
 [![Chapaty](https://img.shields.io/crates/v/chapaty.svg?label=chapaty)][chapaty-crate]
 
 > **Welcome to Chapaty!** Trying out a new framework can be frustrating if things break on day one. If you run into setup issues, framework bugs, or missing data, please reach out on [Discord][discord]. We want to ensure a smooth developer experience and will fix framework bugs promptly.
@@ -145,11 +145,13 @@ chapaty-template/
 │   ├── agent-plan.md            # Strict spec-first protocol
 │   ├── algorithm-ideas.md       # Seed strategies
 │   ├── chapaty-api.md           # Exact chapaty API surface (don't hallucinate)
-│   └── rust-vibe-rules.md       # Rust rules for user code
+│   ├── rust-vibe-rules.md       # Rust rules for user code
+│   └── update-prompts.md        # Triage prompt for post-release .ai/ updates
 ├── .github/
-│   └── workflows/               # CI/CD pipelines (you may delete this)
+│   └── workflows/
+│       └── ci.yaml              # CI/CD pipeline (you may delete this)
 ├── bin/
-│   └── pre-push.sh              # fmt + clippy + test + build
+│   └── pre-push.sh              # fmt + clippy + audit + test + doc + build (you may delete this)
 ├── chapaty/
 │   └── reports/                 # Output reports and CSVs
 │       ├── cumulative_returns.csv
@@ -163,8 +165,13 @@ chapaty-template/
 │   │   ├── demo/                # Shipped demo (safe to delete/override)
 │   │   │   ├── agent.rs
 │   │   │   └── spec.md
-│   │   └── demo.rs
+│   │   ├── demo.rs
+│   │   ├── template/             # Starter skeleton, ready to fill in
+│   │   │   ├── agent.rs
+│   │   │   └── spec.md
+│   │   └── template.rs
 │   ├── agents.rs
+│   ├── crash.rs                 # Panic hook + fatal-error reporting (stderr + optional GCS upload)
 │   └── main.rs                  # Runner (async tokio main)
 ├── visualization/
 │   ├── generate_tearsheet.py    # pandas + quantstats HTML tearsheet

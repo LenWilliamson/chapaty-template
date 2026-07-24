@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use anyhow::{Context, Result};
 use chapaty::prelude::*;
 use chrono::{DateTime, Utc};
 use itertools::iproduct;
@@ -34,18 +35,46 @@ pub struct DemoAgent {
 }
 
 impl DemoAgent {
-    pub fn new(ohlcv_id: OhlcvId, fast_period: u16, slow_period: u16) -> Self {
+    pub async fn env() -> Result<Environment> {
+        let preset = EnvPreset::BinanceBtcUsdt1d;
+        let file_stem = preset.to_string();
+
+        let loc = StorageLocation::HuggingFace { version: None };
+        let cfg = IoConfig::new(loc).with_file_stem(&file_stem);
+
+        chapaty::load(preset, &cfg)
+            .await
+            .context("Failed to load trading environment")
+    }
+
+    pub fn new() -> Self {
         Self {
-            ohlcv_id,
-            fast_period,
-            slow_period,
-            fast_sma: StreamingSma::new(SmaWindow(fast_period)),
-            slow_sma: StreamingSma::new(SmaWindow(slow_period)),
+            ohlcv_id: ohlcv_id(),
+            fast_period: 20,
+            slow_period: 50,
+            fast_sma: StreamingSma::new(SmaWindow(20)),
+            slow_sma: StreamingSma::new(SmaWindow(50)),
             trade_counter: 0,
             current_fast: None,
             current_slow: None,
             last_processed_ts: None,
             agent_id: AgentIdentifier::Named(Arc::new("DemoAgent".to_string())),
+        }
+    }
+
+    pub fn with_fast_period(self, fast_period: u16) -> Self {
+        Self {
+            fast_period,
+            fast_sma: StreamingSma::new(SmaWindow(fast_period)),
+            ..self
+        }
+    }
+
+    pub fn with_slow_period(self, slow_period: u16) -> Self {
+        Self {
+            slow_period,
+            slow_sma: StreamingSma::new(SmaWindow(slow_period)),
+            ..self
         }
     }
 }
@@ -144,27 +173,39 @@ impl DemoAgent {
 }
 
 pub struct DemoAgentGrid {
-    ohlcv_id: OhlcvId,
     fast_period: Vec<u16>,
     slow_period: Vec<u16>,
 }
 
 impl DemoAgentGrid {
-    pub fn baseline(ohlcv_id: OhlcvId) -> ChapatyResult<Self> {
-        Ok(Self {
-            ohlcv_id,
+    pub fn baseline() -> Self {
+        Self {
             fast_period: (10..30).step_by(1).collect(),
             slow_period: (40..60).step_by(1).collect(),
-        })
+        }
     }
 
     pub fn build(self) -> Vec<(usize, DemoAgent)> {
-        let ohlcv_id = self.ohlcv_id;
-
         iproduct!(self.fast_period, self.slow_period)
             .filter(|(f, s)| f < s)
             .enumerate()
-            .map(|(uid, (fast, slow))| (uid, DemoAgent::new(ohlcv_id, fast, slow)))
+            .map(|(uid, (fast, slow))| {
+                (
+                    uid,
+                    DemoAgent::new()
+                        .with_fast_period(fast)
+                        .with_slow_period(slow),
+                )
+            })
             .collect()
+    }
+}
+
+const fn ohlcv_id() -> OhlcvId {
+    OhlcvId {
+        broker: DataBroker::Binance,
+        exchange: Exchange::Binance,
+        symbol: Symbol::Spot(SpotPair::BtcUsdt),
+        period: Period::Day(1),
     }
 }

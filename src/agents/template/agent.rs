@@ -1,37 +1,69 @@
-use std::sync::Arc;
+//! # Template Agent Module
+//!
+//! This modul contains example building blocks for creating a trading strategy with chapaty.
+//! The pre configured structs, namings, etc. are just ideas and can be used if applicable. If not
+//! needed they can be dropped, fields can be removed or replaced. If needed they can be extended or new building blocks such as custom
+//! trading indicator implementations, enums, types etc. can be created freely to build the trading agent according to the
+//! chapaty framwork.
+//!
+//! Only serialize copy variables if we have sma period for streaming sma than add this as a parameter and don't seralize the Streaming SMA itself it is too much data
 
+use std::{collections::BTreeSet, sync::Arc};
+
+use anyhow::{Context, Result};
 use chapaty::prelude::*;
 use chrono::{DateTime, Utc};
 use itertools::iproduct;
 use serde::Serialize;
 
+/// Represents the agent's state during the current trading session. All parameters should be
+/// `#[serde(skip)]` except the ones used for grid search. The parameters used for grid search are exactly those parameters
+/// that are configurations for the trading agents behaviour.
+///
+/// For each Simulation Data stream ID one should add a last_processed_ts to handle idempotency. So for ohlcv_id_2 we would have
+/// last_processed_ts_2.
 #[derive(Debug, Clone, Serialize)]
 pub struct TemplateAgent {
+    // === Simulation Data Stream IDs to access data streams ===
     #[serde(skip)]
     ohlcv_id: OhlcvId,
 
-    volmalen: usize,
-    volmult: f64,
-    sl_pct: f64,
-    tp_crv: f64,
-    trade_qty: f64,
+    // === Agent / Grid Search Parameters (must be serialized) ===
+    param_i32: i32,
+    param_f64: f64,
 
+    // === Streaming Indicators ===
     #[serde(skip)]
     sma: StreamingSma,
+
+    // === Trading State ===
     #[serde(skip)]
-    current_volma: Option<f64>,
+    state: AgentState,
     #[serde(skip)]
     trade_counter: i64,
+
+    // === Idemptency Parameters ===
     #[serde(skip)]
     last_processed_ts: Option<DateTime<Utc>>,
     #[serde(skip)]
-    agent_id: AgentIdentifier, // Pre-computed to save allocations
+    agent_id: AgentIdentifier,
 }
 
 impl TemplateAgent {
+    pub async fn env() -> Result<Environment> {
+        let cfg = EnvConfig::default()
+            .add_ohlcv_future(source.clone(), m1_query)
+            .with_episode_length(EpisodeLength::Infinite)
+            .with_filter_config(filter)
+            .with_trade_hint(2);
+
+        chapaty::make(cfg)
+            .await
+            .context("Failed to load trading environment")
+    }
+
     /// Creates a new agent utilizing the defaults defined in the specification.
-    pub fn new(ohlcv_id: OhlcvId) -> Self {
-        let default_volmalen = 20;
+    pub fn new() -> Self {
         Self {
             ohlcv_id,
             volmalen: default_volmalen,
@@ -43,32 +75,16 @@ impl TemplateAgent {
             current_volma: None,
             trade_counter: 0,
             last_processed_ts: None,
-            agent_id: AgentIdentifier::Named(Arc::new("Demo2Agent".to_string())),
+            agent_id: AgentIdentifier::Named(Arc::new("TemplateAgent".to_string())),
         }
     }
 
-    pub fn with_volmalen(self, volmalen: usize) -> Self {
-        Self {
-            sma: StreamingSma::new(SmaWindow(volmalen as u16)),
-            volmalen,
-            ..self
-        }
+    pub fn with_param_i32(self, param_i32: i32) -> Self {
+        Self { param_i32, ..self }
     }
 
-    pub fn with_volmult(self, volmult: f64) -> Self {
-        Self { volmult, ..self }
-    }
-
-    pub fn with_sl_pct(self, sl_pct: f64) -> Self {
-        Self { sl_pct, ..self }
-    }
-
-    pub fn with_tp_crv(self, tp_crv: f64) -> Self {
-        Self { tp_crv, ..self }
-    }
-
-    pub fn with_trade_qty(self, trade_qty: f64) -> Self {
-        Self { trade_qty, ..self }
+    pub fn with_param_f64(self, param_f64: f64) -> Self {
+        Self { param_f64, ..self }
     }
 }
 
@@ -196,16 +212,44 @@ impl TemplateAgent {
     }
 }
 
+// ================================================================================================
+// Helper Types
+// ================================================================================================
+
+/// Represents the exact phase the agent is in during the current trading session.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+enum AgentState {
+    #[default]
+    PreTrade,
+    InTrade {
+        entry_time: DateTime<Utc>,
+    },
+    PostTrade,
+}
+
+/// Data for a trade setup that is currently active, or waiting for a confirmation to be activated.
+#[derive(Debug, Copy, Clone, PartialEq)]
+struct ActiveSetup {
+    direction: TradeKind,
+    price: Price,
+    ts: DateTime<Utc>,
+}
+
+// ================================================================================================
+// Grid Search Builder
+// ================================================================================================
+
 pub struct TemplateAgentGrid {
     ohlcv_id: OhlcvId,
     volmalen: GridAxis,
     volmult: GridAxis,
     sl_pct: GridAxis,
     tp_crv: GridAxis,
+    // and example for non grid axis in template stripe down
 }
 
 impl TemplateAgentGrid {
-    pub fn baseline(ohlcv_id: OhlcvId) -> ChapatyResult<Self> {
+    pub fn baseline() -> ChapatyResult<Self> {
         Ok(Self {
             ohlcv_id,
             volmalen: GridAxis::new("10", "30", "1")?,
@@ -237,5 +281,18 @@ impl TemplateAgentGrid {
                 )
             })
             .collect()
+    }
+}
+
+// ================================================================================================
+// Stream IDs
+// ================================================================================================
+
+const fn ohlcv_id() -> OhlcvId {
+    OhlcvId {
+        broker: DataBroker::Binance,
+        exchange: Exchange::Binance,
+        symbol: Symbol::Spot(SpotPair::BtcUsdt),
+        period: Period::Day(1),
     }
 }

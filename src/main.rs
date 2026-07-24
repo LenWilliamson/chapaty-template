@@ -1,6 +1,6 @@
 use std::{path::Path, str::FromStr, sync::LazyLock};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chapaty::prelude::*;
 use rand::seq::SliceRandom;
 use serde::Serialize;
@@ -15,7 +15,7 @@ mod agents;
 mod crash;
 
 /// Number of agents randomly selected from the agent grid.
-static GRID_SEARCH_LIMIT: LazyLock<u32> = LazyLock::new(|| {
+static GRID_SEARCH_LIMIT: LazyLock<usize> = LazyLock::new(|| {
     std::env::var("GRID_SEARCH_LIMIT")
         .ok()
         .and_then(|s| s.trim().parse().ok())
@@ -37,8 +37,6 @@ static ACTIVE_AGENT: LazyLock<ActiveAgent> = LazyLock::new(|| {
         .unwrap_or(ActiveAgent::Demo)
 });
 
-/// Available agents. Add a variant + a match arm in `main` to register a new
-/// one.
 #[derive(Debug, Clone, Copy, AsRefStr, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 enum ActiveAgent {
@@ -54,53 +52,27 @@ async fn main() {
     }
 }
 
-/// The actual application entry point. All fallible startup/workflow logic
-/// lives here so `main` stays free to funnel every `Err` through the crash
-/// reporting path below.
 async fn run() -> Result<()> {
     dotenvy::dotenv().ok();
-    println!(">> Loading environment from Hugging Face...");
-    let mut env = environment().await?;
-    let ohlcv = ohlcv_id();
+    println!(">> Loading environment...");
 
     match *ACTIVE_AGENT {
         ActiveAgent::Demo => {
             backtest(
-                &mut env,
-                DemoAgent::new(ohlcv, 20, 50),
-                DemoAgentGrid::baseline(ohlcv)?.build(),
+                &mut DemoAgent::env().await?,
+                DemoAgent::new(),
+                DemoAgentGrid::baseline().build(),
             )
             .await
         }
         ActiveAgent::Template => {
             backtest(
-                &mut env,
-                TemplateAgent::new(ohlcv),
-                TemplateAgentGrid::baseline(ohlcv)?.build(),
+                &mut TemplateAgent::env().await?,
+                TemplateAgent::new(),
+                TemplateAgentGrid::baseline()?.build(),
             )
             .await
         }
-    }
-}
-
-async fn environment() -> Result<Environment> {
-    let preset = EnvPreset::BinanceBtcUsdt1d;
-    let file_stem = preset.to_string();
-
-    let loc = StorageLocation::HuggingFace { version: None };
-    let cfg = IoConfig::new(loc).with_file_stem(&file_stem);
-
-    chapaty::load(preset, &cfg)
-        .await
-        .context("Failed to load trading environment")
-}
-
-fn ohlcv_id() -> OhlcvId {
-    OhlcvId {
-        broker: DataBroker::Binance,
-        exchange: Exchange::Binance,
-        symbol: Symbol::Spot(SpotPair::BtcUsdt),
-        period: Period::Day(1),
     }
 }
 
@@ -150,22 +122,21 @@ where
     println!(">> {label} baseline backtest complete.");
 
     println!(">> Evaluating agents in parallel...");
-    let top_k = (*GRID_SEARCH_LIMIT / 10).max(100);
-    let grid_subset = select_grid_subset(grid);
-    let leaderboard = env.evaluate_agents(grid_subset, top_k as usize)?;
+    let top_k = (*GRID_SEARCH_LIMIT / 10).clamp(10, 100);
+    let leaderboard = env.evaluate_agents(subset(grid), top_k)?;
     save_report(&leaderboard).await?;
     println!(">> {label} grid evaluation complete. Leaderboard saved.");
 
     Ok(())
 }
 
-fn select_grid_subset<T>(mut agents: Vec<(usize, T)>) -> Vec<(usize, T)> {
+fn subset<T>(mut agents: Vec<(usize, T)>) -> Vec<(usize, T)> {
     agents.shuffle(&mut rand::rng());
-    agents.truncate(*GRID_SEARCH_LIMIT as usize);
+    agents.truncate(*GRID_SEARCH_LIMIT);
     agents
 }
 
-/// Writes `report` to the cloud bucket if RESULTS_CLOUD_BUCKET is set,
+/// Writes `report` to the cloud bucket if `RESULTS_CLOUD_BUCKET` is set,
 /// otherwise to local disk.
 async fn save_report<R>(report: &R) -> Result<()>
 where
