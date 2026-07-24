@@ -22,10 +22,12 @@ static GRID_SEARCH_LIMIT: LazyLock<u32> = LazyLock::new(|| {
         .unwrap_or(100)
 });
 
-/// Root directory for all generated reports.
-static RESULTS_DIR: LazyLock<String> = LazyLock::new(|| {
-    std::env::var("RESULTS_DIR").unwrap_or_else(|_| "chapaty/reports".to_string())
-});
+/// Local root directory for all generated reports.
+static RESULTS_LOCAL_DIR: &str = "chapaty/reports";
+
+/// Cloud bucket for all generated reports.
+static RESULTS_CLOUD_BUCKET: LazyLock<Option<String>> =
+    LazyLock::new(|| std::env::var("RESULTS_CLOUD_BUCKET").ok());
 
 /// Which agent to run.
 static ACTIVE_AGENT: LazyLock<ActiveAgent> = LazyLock::new(|| {
@@ -56,26 +58,33 @@ async fn main() {
 /// lives here so `main` stays free to funnel every `Err` through the crash
 /// reporting path below.
 async fn run() -> Result<()> {
+    dotenvy::dotenv().ok();
     println!(">> Loading environment from Hugging Face...");
     let mut env = environment().await?;
     let ohlcv = ohlcv_id();
 
-    let reports_dir = Path::new(&*RESULTS_DIR).join(ACTIVE_AGENT.as_ref());
-    let file_cfg = FileConfig::default().with_dir(&reports_dir);
+    let reports_dir = Path::new(&*RESULTS_LOCAL_DIR).join(ACTIVE_AGENT.as_ref());
+    let file_cfg = FileConfig::default().with_dir(reports_dir);
 
     match *ACTIVE_AGENT {
-        ActiveAgent::Demo => run_workflow(
-            &mut env,
-            &file_cfg,
-            DemoAgent::new(ohlcv, 20, 50),
-            DemoAgentGrid::baseline(ohlcv)?.build(),
-        ),
-        ActiveAgent::Template => run_workflow(
-            &mut env,
-            &file_cfg,
-            TemplateAgent::new(ohlcv),
-            TemplateAgentGrid::baseline(ohlcv)?.build(),
-        ),
+        ActiveAgent::Demo => {
+            backtest(
+                &mut env,
+                file_cfg,
+                DemoAgent::new(ohlcv, 20, 50),
+                DemoAgentGrid::baseline(ohlcv)?.build(),
+            )
+            .await
+        }
+        ActiveAgent::Template => {
+            backtest(
+                &mut env,
+                file_cfg,
+                TemplateAgent::new(ohlcv),
+                TemplateAgentGrid::baseline(ohlcv)?.build(),
+            )
+            .await
+        }
     }
 }
 
@@ -130,9 +139,9 @@ fn ohlcv_id() -> OhlcvId {
 /// Before launching a large grid, benchmark a single agent with
 /// [`Environment::evaluate_agent`] and estimate total time as:
 /// `(single_agent_time * grid.len()) / cpu_cores`.
-fn run_workflow<T>(
+async fn backtest<T>(
     env: &mut Environment,
-    file_cfg: &FileConfig,
+    file_cfg: FileConfig,
     mut baseline: T,
     grid: Vec<(usize, T)>,
 ) -> Result<()>
@@ -144,27 +153,46 @@ where
     println!(">> Running {label} baseline backtest...");
     let journal = env.evaluate_agent(&mut baseline)?;
 
-    journal.to_file_sync(file_cfg)?;
-    journal.cumulative_returns()?.to_file_sync(file_cfg)?;
-    journal.portfolio_performance()?.to_file_sync(file_cfg)?;
-    journal.trade_stats()?.to_file_sync(file_cfg)?;
-    env.equity_curve_report()?
-        .into_eod()?
-        .to_file_sync(file_cfg)?;
+    save_report(&journal, &file_cfg).await?;
+    save_report(&journal.cumulative_returns()?, &file_cfg).await?;
+    save_report(&journal.portfolio_performance()?, &file_cfg).await?;
+    save_report(&journal.trade_stats()?, &file_cfg).await?;
+    save_report(&env.equity_curve_report()?.into_eod()?, &file_cfg).await?;
+
     println!(">> {label} baseline backtest complete.");
 
     println!(">> Evaluating agents in parallel...");
     let top_k = (*GRID_SEARCH_LIMIT / 10).max(100);
     let grid_subset = select_grid_subset(grid);
     let leaderboard = env.evaluate_agents(grid_subset, top_k as usize)?;
-    leaderboard.to_file_sync(file_cfg)?;
+    save_report(&leaderboard, &file_cfg).await?;
     println!(">> {label} grid evaluation complete. Leaderboard saved.");
 
     Ok(())
 }
 
-pub fn select_grid_subset<T>(mut agents: Vec<(usize, T)>) -> Vec<(usize, T)> {
+fn select_grid_subset<T>(mut agents: Vec<(usize, T)>) -> Vec<(usize, T)> {
     agents.shuffle(&mut rand::rng());
     agents.truncate(*GRID_SEARCH_LIMIT as usize);
     agents
+}
+
+/// Writes `report` to the cloud bucket if RESULTS_CLOUD_BUCKET is set,
+/// otherwise to local disk.
+async fn save_report<R>(report: &R, file_cfg: &FileConfig) -> Result<()>
+where
+    R: Report + ReportName + ToSchema + Sync + Send,
+{
+    if let Some(bucket) = RESULTS_CLOUD_BUCKET.as_deref() {
+        let dest = uri(bucket, &format!("{}.csv", report.base_name()));
+        report.to_cloud(&CloudConfig::new(dest)).await?;
+    } else {
+        report.to_file_sync(file_cfg)?;
+    }
+    Ok(())
+}
+
+fn uri(results_dir: &str, file_name: &str) -> String {
+    let dir = results_dir.trim_end_matches('/');
+    format!("{dir}/{file_name}")
 }

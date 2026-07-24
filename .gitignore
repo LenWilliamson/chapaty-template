@@ -22,7 +22,6 @@ target
 
 
 # Added by cargo
-
 /target
 
 # Chapaty outputs
@@ -41,3 +40,7 @@ target
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Environment variables
+.env
+.env.*
