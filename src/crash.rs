@@ -10,9 +10,9 @@ static GCP_CRASH_LOG_DIR: LazyLock<Option<String>> =
 /// Prints the full error chain + backtrace to stderr for container logs,
 /// ships the same text to GCS when `GCP_CRASH_LOG_DIR` is configured, then exits.
 pub async fn handle_fatal_error(err: anyhow::Error) -> ! {
-    let report = format!("{err:?}");
-    eprintln!("{report}");
-    upload_crash_log(report).await;
+    let body = format!("{err:?}");
+    eprintln!("{body}");
+    upload_crash_log(body).await;
     std::process::exit(1);
 }
 
@@ -25,9 +25,7 @@ pub fn install_panic_hook() {
     panic::set_hook(Box::new(move |info| {
         // Keep the default formatting/behavior (stderr message, location, etc.).
         default_hook(info);
-
-        if let Some(dir) = GCP_CRASH_LOG_DIR.as_deref() {
-            let path = format!("{}/execution_stderr.txt", dir.trim_end_matches('/'));
+        if GCP_CRASH_LOG_DIR.is_some() {
             let body = format!("{info}\n\nStack Backtrace:\n{}", Backtrace::capture());
 
             let upload_thread = std::thread::Builder::new()
@@ -37,11 +35,7 @@ pub fn install_panic_hook() {
                         .enable_all()
                         .build()
                     {
-                        Ok(rt) => rt.block_on(async {
-                            if let Err(e) = upload_to_gcs(&path, body).await {
-                                eprintln!("Failed to upload panic log to {path}: {e:?}");
-                            }
-                        }),
+                        Ok(rt) => rt.block_on(upload_crash_log(body)),
                         Err(e) => {
                             eprintln!("Failed to start runtime for panic log upload: {e:?}")
                         }
@@ -49,9 +43,10 @@ pub fn install_panic_hook() {
                 });
 
             match upload_thread {
-                Ok(handle) => {
-                    let _ = handle.join();
-                }
+                Ok(handle) => match handle.join() {
+                    Ok(_) => {}
+                    Err(e) => eprintln!("Failed to join thread for panic log upload: {e:?}"),
+                },
                 Err(e) => eprintln!("Failed to spawn thread for panic log upload: {e:?}"),
             }
         }
