@@ -3,12 +3,12 @@ use std::{backtrace::Backtrace, panic, sync::LazyLock};
 use anyhow::{Result, bail};
 use object_store::{ObjectStoreExt, gcp::GoogleCloudStorageBuilder, path::Path as ObjectPath};
 
-/// Directory for crash logs.
-static GCP_CRASH_LOG_DIR: LazyLock<Option<String>> =
-    LazyLock::new(|| std::env::var("GCP_CRASH_LOG_DIR").ok());
+/// Bucket-relative prefix for the crash-diagnostic upload execution_stderr.txt on a panic/error exit
+static GCP_CRASH_LOG_PREFIX: LazyLock<Option<String>> =
+    LazyLock::new(|| std::env::var("GCP_CRASH_LOG_PREFIX").ok());
 
 /// Prints the full error chain + backtrace to stderr for container logs,
-/// ships the same text to GCS when `GCP_CRASH_LOG_DIR` is configured, then exits.
+/// ships the same text to GCS when `GCP_CRASH_LOG_PREFIX` is configured, then exits.
 pub async fn handle_fatal_error(err: anyhow::Error) -> ! {
     let body = format!("{err:?}");
     eprintln!("{body}");
@@ -25,7 +25,7 @@ pub fn install_panic_hook() {
     panic::set_hook(Box::new(move |info| {
         // Keep the default formatting/behavior (stderr message, location, etc.).
         default_hook(info);
-        if GCP_CRASH_LOG_DIR.is_some() {
+        if GCP_CRASH_LOG_PREFIX.is_some() {
             let body = format!("{info}\n\nStack Backtrace:\n{}", Backtrace::capture());
 
             let upload_thread = std::thread::Builder::new()
@@ -55,10 +55,8 @@ pub fn install_panic_hook() {
     }));
 }
 
-/// Uploads `body` to `{GCP_CRASH_LOG_DIR}/execution_stderr.txt`. A no-op when
-/// `GCP_CRASH_LOG_DIR` isn't set.
 async fn upload_crash_log(body: String) {
-    let Some(dir) = GCP_CRASH_LOG_DIR.as_deref() else {
+    let Some(dir) = GCP_CRASH_LOG_PREFIX.as_deref() else {
         return;
     };
 
@@ -68,6 +66,7 @@ async fn upload_crash_log(body: String) {
     }
 }
 
+/// Uploads `data` to `path`, inside the bucket named by `INTERNAL_BUCKET`.
 async fn upload_to_gcs(path: &str, data: String) -> Result<()> {
     let Ok(bucket_name) = std::env::var("INTERNAL_BUCKET") else {
         bail!("INTERNAL_BUCKET env var not set")
