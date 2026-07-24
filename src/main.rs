@@ -63,14 +63,10 @@ async fn run() -> Result<()> {
     let mut env = environment().await?;
     let ohlcv = ohlcv_id();
 
-    let reports_dir = Path::new(&*RESULTS_LOCAL_DIR).join(ACTIVE_AGENT.as_ref());
-    let file_cfg = FileConfig::default().with_dir(reports_dir);
-
     match *ACTIVE_AGENT {
         ActiveAgent::Demo => {
             backtest(
                 &mut env,
-                file_cfg,
                 DemoAgent::new(ohlcv, 20, 50),
                 DemoAgentGrid::baseline(ohlcv)?.build(),
             )
@@ -79,7 +75,6 @@ async fn run() -> Result<()> {
         ActiveAgent::Template => {
             backtest(
                 &mut env,
-                file_cfg,
                 TemplateAgent::new(ohlcv),
                 TemplateAgentGrid::baseline(ohlcv)?.build(),
             )
@@ -111,25 +106,23 @@ fn ohlcv_id() -> OhlcvId {
 
 /// Runs a baseline backtest followed by a parallel grid search.
 ///
-/// # Workflow
+/// # Backtest steps
 ///
-/// 1. **Baseline backtest** — evaluates `baseline` and writes:
+/// 1. **Baseline backtest:** evaluates `baseline` and writes:
 ///    - the trade journal,
 ///    - cumulative returns,
 ///    - portfolio performance,
 ///    - trade statistics,
 ///    - end-of-day equity curve.
-/// 2. **Grid search** — evaluates every `(uid, agent)` pair in `grid` in
+/// 2. **Grid search:** evaluates every `(uid, agent)` pair in `grid` in
 ///    parallel via `rayon`, retaining the top [`LEADERBOARD_TOP_K`] performers,
 ///    and writes the resulting leaderboard.
 ///
-/// All output files are written to `file_cfg`'s directory.
+/// All output files are written to the default results directory.
 ///
 /// # Arguments
 ///
 /// * `env` — the loaded trading [`Environment`].
-/// * `file_cfg` — destination configuration for every report this function
-///   emits.
 /// * `baseline` — the single agent to backtest for the tearsheet.
 /// * `grid` — `(uid, agent)` pairs to backtest in parallel. UIDs are
 ///   caller-assigned and surface in the leaderboard for traceability.
@@ -139,12 +132,7 @@ fn ohlcv_id() -> OhlcvId {
 /// Before launching a large grid, benchmark a single agent with
 /// [`Environment::evaluate_agent`] and estimate total time as:
 /// `(single_agent_time * grid.len()) / cpu_cores`.
-async fn backtest<T>(
-    env: &mut Environment,
-    file_cfg: FileConfig,
-    mut baseline: T,
-    grid: Vec<(usize, T)>,
-) -> Result<()>
+async fn backtest<T>(env: &mut Environment, mut baseline: T, grid: Vec<(usize, T)>) -> Result<()>
 where
     T: Agent + Send + Serialize,
 {
@@ -153,11 +141,11 @@ where
     println!(">> Running {label} baseline backtest...");
     let journal = env.evaluate_agent(&mut baseline)?;
 
-    save_report(&journal, &file_cfg).await?;
-    save_report(&journal.cumulative_returns()?, &file_cfg).await?;
-    save_report(&journal.portfolio_performance()?, &file_cfg).await?;
-    save_report(&journal.trade_stats()?, &file_cfg).await?;
-    save_report(&env.equity_curve_report()?.into_eod()?, &file_cfg).await?;
+    save_report(&journal).await?;
+    save_report(&journal.cumulative_returns()?).await?;
+    save_report(&journal.portfolio_performance()?).await?;
+    save_report(&journal.trade_stats()?).await?;
+    save_report(&env.equity_curve_report()?.into_eod()?).await?;
 
     println!(">> {label} baseline backtest complete.");
 
@@ -165,7 +153,7 @@ where
     let top_k = (*GRID_SEARCH_LIMIT / 10).max(100);
     let grid_subset = select_grid_subset(grid);
     let leaderboard = env.evaluate_agents(grid_subset, top_k as usize)?;
-    save_report(&leaderboard, &file_cfg).await?;
+    save_report(&leaderboard).await?;
     println!(">> {label} grid evaluation complete. Leaderboard saved.");
 
     Ok(())
@@ -179,7 +167,7 @@ fn select_grid_subset<T>(mut agents: Vec<(usize, T)>) -> Vec<(usize, T)> {
 
 /// Writes `report` to the cloud bucket if RESULTS_CLOUD_BUCKET is set,
 /// otherwise to local disk.
-async fn save_report<R>(report: &R, file_cfg: &FileConfig) -> Result<()>
+async fn save_report<R>(report: &R) -> Result<()>
 where
     R: Report + ReportName + ToSchema + Sync + Send,
 {
@@ -187,7 +175,8 @@ where
         let dest = uri(bucket, &format!("{}.csv", report.base_name()));
         report.to_cloud(&CloudConfig::new(dest)).await?;
     } else {
-        report.to_file_sync(file_cfg)?;
+        let reports_dir = Path::new(&*RESULTS_LOCAL_DIR).join(ACTIVE_AGENT.as_ref());
+        report.to_file_sync(&FileConfig::default().with_dir(reports_dir))?;
     }
     Ok(())
 }
