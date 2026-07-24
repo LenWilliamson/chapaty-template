@@ -100,7 +100,9 @@ def upload_tearsheet_cloud(output_path: Path, bucket_uri: str, agent: str) -> No
         f"{bucket_uri.rstrip('/')}/{agent}/{output_path.name}", client=client
     )
 
-    print(f"[tearsheet] Uploading {output_path} to gs://{blob.bucket.name}/{blob.name}...")
+    print(
+        f"[tearsheet] Uploading {output_path} to gs://{blob.bucket.name}/{blob.name}..."
+    )
     try:
         blob.upload_from_filename(str(output_path))
         print(f"[tearsheet] Uploaded to gs://{blob.bucket.name}/{blob.name}")
