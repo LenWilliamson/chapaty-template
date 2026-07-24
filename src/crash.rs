@@ -30,17 +30,29 @@ pub fn install_panic_hook() {
             let path = format!("{}/execution_stderr.txt", dir.trim_end_matches('/'));
             let body = format!("{info}\n\nStack Backtrace:\n{}", Backtrace::capture());
 
-            // Spin up a throwaway single-thread runtime to upload the panic log.
-            match tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-            {
-                Ok(rt) => rt.block_on(async {
-                    if let Err(e) = upload_to_gcs(&path, body).await {
-                        eprintln!("!! Failed to upload panic log to {path}: {e:?}");
+            let upload_thread = std::thread::Builder::new()
+                .name("panic-crash-log-upload".to_string())
+                .spawn(move || {
+                    match tokio::runtime::Builder::new_current_thread()
+                        .enable_all()
+                        .build()
+                    {
+                        Ok(rt) => rt.block_on(async {
+                            if let Err(e) = upload_to_gcs(&path, body).await {
+                                eprintln!("Failed to upload panic log to {path}: {e:?}");
+                            }
+                        }),
+                        Err(e) => {
+                            eprintln!("Failed to start runtime for panic log upload: {e:?}")
+                        }
                     }
-                }),
-                Err(e) => eprintln!("!! Failed to start runtime for panic log upload: {e:?}"),
+                });
+
+            match upload_thread {
+                Ok(handle) => {
+                    let _ = handle.join();
+                }
+                Err(e) => eprintln!("Failed to spawn thread for panic log upload: {e:?}"),
             }
         }
 
