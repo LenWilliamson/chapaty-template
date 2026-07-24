@@ -145,28 +145,26 @@ impl DemoAgent {
 
 pub struct DemoAgentGrid {
     ohlcv_id: OhlcvId,
-    fast_period: GridAxis,
-    slow_period: GridAxis,
+    fast_period: Vec<u16>,
+    slow_period: Vec<u16>,
 }
 
 impl DemoAgentGrid {
     pub fn baseline(ohlcv_id: OhlcvId) -> ChapatyResult<Self> {
         Ok(Self {
             ohlcv_id,
-            fast_period: GridAxis::new("10", "30", "1")?,
-            slow_period: GridAxis::new("40", "60", "1")?,
+            fast_period: (10..30).step_by(1).collect(),
+            slow_period: (40..60).step_by(1).collect(),
         })
     }
 
     pub fn build(self) -> Vec<(usize, DemoAgent)> {
-        let fasts = self.fast_period.generate();
-        let slows = self.slow_period.generate();
         let ohlcv_id = self.ohlcv_id;
 
-        iproduct!(fasts, slows)
+        iproduct!(self.fast_period, self.slow_period)
             .filter(|(f, s)| f < s)
             .enumerate()
-            .map(|(uid, (fast, slow))| (uid, DemoAgent::new(ohlcv_id, fast as u16, slow as u16)))
+            .map(|(uid, (fast, slow))| (uid, DemoAgent::new(ohlcv_id, fast, slow)))
             .collect()
     }
 }

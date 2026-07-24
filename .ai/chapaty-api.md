@@ -227,9 +227,9 @@ let sl_axis = GridAxis::new("0.8", "2.1", "0.1")?; // end is exclusive
 let sl_values = sl_axis.generate();
 
 // DO: integer axis via standard iterators
-let lookbacks = (14..=60).step_by(2).map(i64::from).collect();
+let lookbacks = (14..=60).step_by(2).collect();
 
-// ❌ DON'T: use GridAxis for integer-only ranges
+// DON'T: use GridAxis for integer-only ranges
 // let lookback_axis = GridAxis::new("14", "61", "1")?;
 ```
 

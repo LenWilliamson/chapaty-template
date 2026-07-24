@@ -176,7 +176,7 @@ where
         let dest = uri(bucket, &format!("{agent}/{}.csv", report.base_name()));
         report.to_cloud(&CloudConfig::new(dest)).await?;
     } else {
-        let reports_dir = Path::new(&*RESULTS_LOCAL_DIR).join(agent);
+        let reports_dir = Path::new(RESULTS_LOCAL_DIR).join(agent);
         report.to_file_sync(&FileConfig::default().with_dir(reports_dir))?;
     }
     Ok(())
