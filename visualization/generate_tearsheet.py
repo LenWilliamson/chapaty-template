@@ -4,9 +4,8 @@ Generate a QuantStats HTML tearsheet from a Chapaty Equity Curve.
 Mirrors `src/main.rs`'s `save_report`: if `RESULTS_CLOUD_BUCKET` is set (a
 "gs://bucket/prefix" URI), the equity curve is read from
 `{RESULTS_CLOUD_BUCKET}/{agent}/equity_curve.csv` and the finished tearsheet
-is uploaded back to `{RESULTS_CLOUD_BUCKET}/{agent}/tearsheet.html` — the
-same per-agent nesting `save_report` uses in the cloud bucket. Otherwise both
-read and write stay local: `chapaty/reports/<agent>/equity_curve.parquet`
+is uploaded back to `{RESULTS_CLOUD_BUCKET}/{agent}/tearsheet.html`. Otherwise
+both read and write stay local: `chapaty/reports/<agent>/equity_curve.parquet`
 (falling back to the `.csv`) and `chapaty/reports/<agent>/tearsheet.html`.
 The agent subdirectory is passed as the first CLI argument (e.g.
 `python generate_tearsheet.py demo`) and matches the `ActiveAgent` variant
@@ -52,7 +51,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "agent",
-        help="Agent subdirectory under chapaty/reports/ (e.g. 'demo', 'demo2').",
+        help="Agent subdirectory under chapaty/reports/ (e.g. 'demo', 'template').",
     )
     return parser.parse_args()
 
