@@ -6,7 +6,20 @@
 //! enums, or helper types whenever the strategy calls for them.
 //!
 //! For a complete, minimal working strategy, read the demo agent that ships alongside
-//! this template. For advanced, production-grade references, see chapaty-zoo.
+//! this template. For advanced, production-grade references, see [chapaty-zoo](https://github.com/LenWilliamson/chapaty-zoo).
+//!
+//! ## How this template maps to the specification
+//!
+//! The layout of this file follows the layout of the specification, so you can check
+//! the implementation against the specification one section at a time. The section
+//! markers below point at the place where each part of the specification belongs.
+//!
+//! * Section 2, Environment, belongs in `env()`.
+//! * Section 3, Observation Inputs, belongs in steps 1 to 3 of `act()`.
+//! * Section 4, Entry Logic, belongs in the `AgentState::PreTrade` arm of `act()`.
+//! * Section 5, Exit Logic, belongs in the `AgentState::InTrade` arm of `act()`.
+//! * Section 6, Parameters, belongs in the serialized fields, the `with_*` methods,
+//!   and `TemplateAgentGrid`.
 //!
 //! ## What to serialize
 //!
@@ -14,6 +27,15 @@
 //! agent's behaviour and that you sweep over during a grid search. These are the fields
 //! that show up in the leaderboard. Mark everything else with `#[serde(skip)]`: stream
 //! ids, streaming indicators, trading state, counters, and idempotency timestamps.
+//!
+//! ## Every parameter needs a call site
+//!
+//! A parameter is only real once it is used. Each one travels the same path: you declare
+//! it as a serialized field, you set it in a `with_*` method, you sweep it in
+//! `TemplateAgentGrid`, and you read it somewhere in `act()` or in a helper. Both example
+//! parameters below travel that full path. If you add a parameter and never read it, the
+//! grid search will produce many rows that behave identically, which is easy to miss
+//! because the results still look plausible.
 //!
 //! ## Streaming indicators
 //!
@@ -54,11 +76,19 @@ pub struct TemplateAgent {
     #[serde(skip)]
     ohlcv_future_id: OhlcvId,
 
-    // Grid search parameters. These configure the agent's behaviour and are the only
-    // fields that are serialized. Read them wherever your logic needs them: inside
-    // `act()`, to size an order, or to configure an indicator or the query.
-    param_i32: i32,
-    param_f64: f64,
+    // ------------------------------------------------------------------------------------------
+    // Specification section 6: Parameters
+    //
+    // Grid search parameters. These configure the agent's behaviour and are the only fields that
+    // are serialized. Every parameter here is read somewhere in the logic below, and replacing
+    // them with the parameters from your specification is the first change to make.
+    // ------------------------------------------------------------------------------------------
+    /// How long a trade may stay open before the exit rule closes it. Read in the
+    /// `AgentState::InTrade` arm of `act()`.
+    max_holding_minutes: i64,
+
+    /// How many contracts or units each trade opens with. Read in `open_market()`.
+    position_size: f64,
 
     // Streaming indicators go here. Always `#[serde(skip)]`. Store the indicator's
     // configuration as a grid parameter above, for example an SMA period, and rebuild the
@@ -80,11 +110,15 @@ pub struct TemplateAgent {
 }
 
 impl TemplateAgent {
+    // ==========================================================================================
+    // Specification section 2: Environment
+    // ==========================================================================================
+
     /// Builds the trading environment for this agent.
     ///
     /// This example builds the environment from scratch with `chapaty::make`, which
     /// fetches data from the configured `DataSource`. `DataSource::Hosted` reads
-    /// `CHAPATY_API_KEY` from the environment, so load your `.env` before calling this. If
+    /// `CHAPATY_CREDENTIAL` from the environment. If
     /// you only need a ready-made dataset, use a preset instead with
     /// `chapaty::load(EnvPreset::..., &io_cfg)`.
     ///
@@ -92,6 +126,10 @@ impl TemplateAgent {
     /// agent resets at every episode boundary, so a short episode can stop an indicator
     /// from ever warming up. `EpisodeLength::Infinite` never resets during the run and is
     /// the safe default.
+    ///
+    /// Read the note on `AgentState::PostTrade` in `act()` before you change this value.
+    /// The episode length and the way your state machine leaves `PostTrade` decide how
+    /// often the agent is allowed to trade, and the two settings have to agree.
     pub async fn env() -> Result<Environment> {
         let source = DataSource::Hosted;
         let ohlcv_query = ohlcv_future_query();
@@ -116,8 +154,8 @@ impl TemplateAgent {
     pub fn new() -> Self {
         Self {
             ohlcv_future_id: ohlcv_future_id(),
-            param_i32: 1,
-            param_f64: 2.0,
+            max_holding_minutes: 30,
+            position_size: 1.0,
             state: AgentState::default(),
             trade_counter: 0,
             last_processed_ts: None,
@@ -125,17 +163,29 @@ impl TemplateAgent {
         }
     }
 
-    /// Overrides `param_i32`. Use this when building a grid of parameters.
-    pub fn with_param_i32(self, param_i32: i32) -> Self {
-        Self { param_i32, ..self }
+    /// Overrides `max_holding_minutes`. Use this when building a grid of parameters.
+    pub fn with_max_holding_minutes(self, max_holding_minutes: i64) -> Self {
+        Self {
+            max_holding_minutes,
+            ..self
+        }
     }
 
-    /// Overrides `param_f64`. Use this when building a grid of parameters.
+    /// Overrides `position_size`. Use this when building a grid of parameters.
     ///
     /// If a parameter configures a streaming indicator, rebuild the indicator here from
     /// the new value, for example `sma: StreamingSma::new(SmaWindow(period))`.
-    pub fn with_param_f64(self, param_f64: f64) -> Self {
-        Self { param_f64, ..self }
+    pub fn with_position_size(self, position_size: f64) -> Self {
+        Self {
+            position_size,
+            ..self
+        }
+    }
+}
+
+impl Default for TemplateAgent {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
@@ -156,6 +206,10 @@ impl Agent for TemplateAgent {
 
     fn act(&mut self, obs: Observation) -> ChapatyResult<Actions> {
         let market_view = &obs.market_view;
+
+        // ======================================================================================
+        // Specification section 3: Observation Inputs
+        // ======================================================================================
 
         // 1. Read the latest bar. Wait for the next call if the stream has no data yet.
         let Some(candle) = market_view.ohlcv().last_event(&self.ohlcv_future_id) else {
@@ -181,17 +235,26 @@ impl Agent for TemplateAgent {
         }
 
         // 3. Read the current position. Entry and exit logic branch on whether a trade is
-        //    open, and closing a trade needs its `trade_id`.
+        //    open, and closing a trade needs its `trade_id`. Your own `self.state` and the
+        //    engine's view of the position can disagree, because the engine closes a trade
+        //    on its stop loss or take profit without telling the state machine. Always
+        //    treat the engine as the source of truth for whether a trade is still open.
         let active_trade = obs.states.find_active_trade_for_agent(&self.identifier());
         let market_id: MarketId = self.ohlcv_future_id.into();
 
         // 4. Drive the state machine. Replace the placeholder decisions with your logic.
         let actions = match self.state {
+            // ==================================================================================
+            // Specification section 4: Entry Logic
+            // ==================================================================================
             AgentState::PreTrade => {
                 // Evaluate your entry condition here, for example from a streaming
-                // indicator or the candle, and return `EntrySignal::Enter(direction)`
-                // when it triggers.
+                // indicator or the candle, and produce `EntrySignal::Enter(direction)`
+                // when it triggers. Replace the single line below and leave the rest of
+                // this arm as it is, because it already wires up the state transition and
+                // the order.
                 let signal = EntrySignal::Stay; // TODO: replace with your entry condition.
+
                 match signal {
                     EntrySignal::Enter(direction) => {
                         self.state = AgentState::InTrade {
@@ -203,16 +266,21 @@ impl Agent for TemplateAgent {
                 }
             }
 
+            // ==================================================================================
+            // Specification section 5: Exit Logic
+            // ==================================================================================
             AgentState::InTrade { entry_time } => {
                 // The engine handles the stop loss and take profit you set on the order.
-                // Add discretionary exits here. This example shows a maximum holding time;
-                // replace the rule and the literal with your own.
+                // Add discretionary exits here. This example closes the trade once it has
+                // been open for longer than the `max_holding_minutes` parameter. Replace
+                // the rule with your own, and keep reading the limit from a parameter
+                // instead of writing a number here, so that the grid search can sweep it.
                 let held_minutes = market_view
                     .current_timestamp()
                     .signed_duration_since(entry_time)
                     .num_minutes();
-                let decision = if held_minutes >= 30 {
-                    ExitDecision::Close // TODO: make the holding time a grid parameter.
+                let decision = if held_minutes >= self.max_holding_minutes {
+                    ExitDecision::Close
                 } else {
                     ExitDecision::Hold
                 };
@@ -234,8 +302,23 @@ impl Agent for TemplateAgent {
             }
 
             AgentState::PostTrade => {
-                // The trade is done for this session. Wait for the next episode, or reset
-                // `self.state` here if your strategy re-arms within the same episode.
+                // The previous trade is finished. This template goes straight back to
+                // `PreTrade`, so the agent can look for the next setup on the following
+                // bar.
+                //
+                // Think carefully before you change this, because this arm and the episode
+                // length together decide how often the agent trades. `env()` uses
+                // `EpisodeLength::Infinite`, which never resets the agent during a run. If
+                // you make `PostTrade` a final state under an infinite episode, the agent
+                // takes one single trade over the whole dataset and then does nothing for
+                // the rest of the run. The grid search still completes and the leaderboard
+                // still fills up, so the mistake is easy to miss.
+                //
+                // Keep this transition for a strategy that trades repeatedly. Remove it
+                // only if your strategy takes one trade per episode, and then set a finite
+                // episode length in `env()` as well, for example one episode per trading
+                // day.
+                self.state = AgentState::PreTrade;
                 Actions::no_op()
             }
         };
@@ -253,7 +336,7 @@ impl TemplateAgent {
             agent_id: self.identifier(),
             trade_id: TradeId(self.trade_counter),
             trade_type,
-            quantity: Quantity(1.0),
+            quantity: Quantity(self.position_size),
             entry_price: None, // None means a market order. Some(Price(x)) is a limit.
             stop_loss: None,
             take_profit: None,
@@ -298,7 +381,7 @@ impl Default for AgentState {
 /// The outcome of evaluating the entry condition in the `PreTrade` state.
 #[expect(
     dead_code,
-    reason = "Template placeholder. The `Enter` variant is constructed once you implement the entry condition."
+    reason = "Template placeholder. The Enter variant is only constructed once you implement the entry condition, so remove this attribute as soon as you do. The compiler will remind you, because an expectation that never fires is itself reported."
 )]
 #[derive(Debug, Clone, Copy)]
 enum EntrySignal {
@@ -319,11 +402,14 @@ enum ExitDecision {
 
 // ================================================================================================
 // Grid Search Builder
+//
+// This is the second half of specification section 6. Every parameter you add to the agent
+// needs an axis here, otherwise the grid search always uses its default value.
 // ================================================================================================
 
 pub struct TemplateAgentGrid {
-    i32_grid: Vec<i32>,
-    f64_grid: GridAxis,
+    max_holding_minutes_grid: Vec<i64>,
+    position_size_grid: GridAxis,
 }
 
 impl TemplateAgentGrid {
@@ -331,24 +417,24 @@ impl TemplateAgentGrid {
     /// integer ranges.
     pub fn baseline() -> ChapatyResult<Self> {
         Ok(Self {
-            i32_grid: (-5..5).step_by(1).collect(),
-            f64_grid: GridAxis::new("1.0", "2.0", "0.1")?,
+            max_holding_minutes_grid: (30_i64..=240).step_by(30).collect(),
+            position_size_grid: GridAxis::new("1.0", "3.0", "1.0")?,
         })
     }
 
     /// Builds every agent in the grid. Assign a unique id with `enumerate` and filter out
     /// invalid parameter combinations before collecting.
     pub fn build(self) -> Vec<(usize, TemplateAgent)> {
-        let f64s = self.f64_grid.generate();
+        let position_sizes = self.position_size_grid.generate();
 
-        iproduct!(self.i32_grid, f64s)
+        iproduct!(self.max_holding_minutes_grid, position_sizes)
             .enumerate()
-            .map(|(uid, (param_i32, param_f64))| {
+            .map(|(uid, (max_holding_minutes, position_size))| {
                 (
                     uid,
                     TemplateAgent::new()
-                        .with_param_i32(param_i32)
-                        .with_param_f64(param_f64),
+                        .with_max_holding_minutes(max_holding_minutes)
+                        .with_position_size(position_size),
                 )
             })
             .collect()

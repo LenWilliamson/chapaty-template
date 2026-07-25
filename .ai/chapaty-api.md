@@ -234,51 +234,172 @@ _Idiomatic naming:_ `AgentIdentifier::Named(Arc::new("MyAgent".to_string()))`
 
 ## 8. Observation Space
 
-Query the world state (`market_view`) and portfolio state (`states`). You reference each stream with the ID you got from `query.to_id()`.
+An `Observation` has two halves. `obs.market_view` is the world state, which is all market data visible at the current step. `obs.states` is the portfolio state, which is every trade the engine knows about. You reference each data stream with the id you got from `query.to_id()`.
+
+The engine never shows you data from the future. Every slice, iterator, and price lookup is already truncated at the current step, so you cannot accidentally look ahead.
+
+### 8a. Time
 
 ```rust
-// === Temporal & Price ===
-let ts = obs.market_view.current_timestamp();                                   // DateTime<Utc>
-let prev_ts = obs.market_view.previous_timestamp();                             // DateTime<Utc>
-let last_price = obs.market_view.try_resolved_close_price(self.symbol);         // ChapatyResult<Price>
-// In execution logic do NOT blindly `?` the line above. See section 4.
+let now = obs.market_view.current_timestamp();    // DateTime<Utc>
+let prev = obs.market_view.previous_timestamp();  // DateTime<Utc>
+```
 
-// === Candle history (StreamView trait) via the OhlcvId ===
-let slice: Option<&[Ohlcv]> = obs.market_view.ohlcv().get_slice(&self.m15_id);  // all candles so far
-let len: usize = obs.market_view.ohlcv().len(&self.m15_id);                     // count so far
-let last = obs.market_view.ohlcv().last_event(&self.m15_id);                    // Option<&Ohlcv>
+On the very first step of an episode there is no previous step, so `previous_timestamp()` returns `DateTime::<Utc>::MIN_UTC`. Any call that compares against it, such as `new_events_since`, therefore returns the full history on that first step rather than nothing.
 
-if let Some(iter) = obs.market_view.ohlcv().rev_iter(&self.m15_id) {
-    let prev_candle = iter.nth(1); // second-to-last candle, newest-to-oldest
+### 8b. Reading a data stream
+
+Every stream accessor returns a view that implements the `StreamView` trait, so all streams are read the same way. The five methods are:
+
+| Method                      | Returns                 | Use it for                                      |
+| --------------------------- | ----------------------- | ----------------------------------------------- |
+| `get_slice(&id)`            | `Option<&[Event]>`      | All events so far, indexable by position        |
+| `len(&id)`                  | `usize`                 | How many events exist so far                    |
+| `last_event(&id)`           | `Option<&Event>`        | The newest event, which is the common case      |
+| `rev_iter(&id)`             | `Option<impl Iterator>` | Walking backwards from newest to oldest         |
+| `new_events_since(&id, ts)` | `Option<impl Iterator>` | Only events newer than a timestamp you remember |
+
+```rust
+// The newest bar. This is what most strategies need.
+let Some(candle) = obs.market_view.ohlcv().last_event(&self.m15_id) else {
+    return Ok(Actions::no_op()); // The stream has no data yet.
+};
+
+// The whole history so far, if you need to index into it by position.
+let slice: Option<&[Ohlcv]> = obs.market_view.ohlcv().get_slice(&self.m15_id);
+let count: usize = obs.market_view.ohlcv().len(&self.m15_id);
+
+// The global index of the newest bar. Streaming indicators such as
+// StreamingHhll and StreamingFairValueGap need this index from you.
+let index = obs.market_view.ohlcv().len(&self.m15_id).saturating_sub(1);
+
+// Walk backwards from newest to oldest. This stops early, so it stays cheap.
+if let Some(mut iter) = obs.market_view.ohlcv().rev_iter(&self.m15_id) {
+    let previous_candle = iter.nth(1); // The bar before the newest one.
 }
-if let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id, prev_ts) {
-    for candle in new_events { /* only candles newer than prev_ts */ }
-}
 
-// === Batch indicators (precomputed, O(1)) via their IDs ===
-let sma = obs.market_view.sma().last_event(&sma_id);            // Option<&Sma>
-let atr = obs.market_view.atr().last_event(&atr_id);            // Option<&Atr>
-let roc = obs.market_view.roc().last_event(&roc_id);           // Option<&Roc>
-let news = obs.market_view.economic_news().last_event(&cal_id); // Option<&EconomicEvent>
-
-// Did any stream reach `price` between the previous and current step?
-let was_hit = obs.market_view.reached_price(price, self.symbol, TradeKind::Long); // bool
-
-// === Portfolio State ===
-let in_trade = obs.states.any_active_trade_for_agent(&self.identifier());       // bool
-if let Some((_, active_trade)) = obs.states.find_active_trade_for_agent(&self.agent_id) {
-    let id: TradeId = active_trade.trade_id();
+// Only the events that arrived since the last step.
+if let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id, prev) {
+    for candle in new_events { /* React to each new bar. */ }
 }
 ```
 
-**All `market_view` stream accessors** (these are exactly the streams the engine tracks): `ohlcv()`, `trades()`, `economic_news()`, `volume_profile()`, `tpo()`, `ema()`, `sma()`, `rsi()`, `atr()`, `roc()`, `ohlcv_vwap()`, `trades_vwap()`, `ohlcv_session()`, `trades_session()`. An accessor only returns data if you configured the matching query or batch indicator.
+`rev_iter` and `new_events_since` both run newest to oldest and stop as soon as they pass your cutoff, so prefer them over scanning the whole slice.
 
-**Key event payloads:**
+**All stream accessors on `market_view`:** `ohlcv()`, `trades()`, `economic_news()`, `volume_profile()`, `tpo()`, `ema()`, `sma()`, `rsi()`, `atr()`, `roc()`, `ohlcv_vwap()`, `trades_vwap()`, `ohlcv_session()`, `trades_session()`. An accessor only returns data if you configured the matching query or batch indicator. Otherwise every method returns `None` or zero.
 
-- **`Ohlcv`**: `.open`, `.high`, `.low`, `.close` (all `Price`), `.volume` (`Volume`), `.open_timestamp`, `.close_timestamp` (`DateTime<Utc>`). Helper `.direction()`.
-- **`TradeEvent`**: `.price` (`Price`), `.quantity` (`Quantity`), `.is_buyer_maker` (`Option<LiquiditySide>`). This is raw market execution, not your own trade state.
-- **`EconomicEvent`**: `.actual`, `.forecast`, `.previous` (all `Option<EconomicValue>`), `.economic_impact` (`EconomicEventImpact`).
-- **`VolumeProfile` / `Tpo`**: `.poc`, `.value_area_high`, `.value_area_low` (all `Price`).
+```rust
+// Batch indicators are read the same way, using the id you built by hand.
+let sma = obs.market_view.sma().last_event(&sma_id);              // Option<&Sma>
+let atr = obs.market_view.atr().last_event(&atr_id);              // Option<&Atr>
+let session = obs.market_view.ohlcv_session().last_event(&sid);   // Option<&OhlcvSession>
+let news = obs.market_view.economic_news().last_event(&cal_id);   // Option<&EconomicEvent>
+```
+
+### 8c. Price helpers on `market_view`
+
+```rust
+// The most recent close price for a symbol, resolved across every stream that
+// can supply one. If several streams carry the symbol, the newest wins.
+let price = obs.market_view.try_resolved_close_price(self.symbol); // ChapatyResult<Price>
+// In execution logic never write `?` or `.unwrap()` on this call. See section 4.
+
+// Did any stream touch this price between the previous step and now? This checks
+// every price-capable stream, not just one, so a fast stream can register a touch
+// that a slow stream would have missed.
+let touched = obs.market_view.reached_price(price, self.symbol, TradeKind::Long); // bool
+
+// The bar that was open at a given timestamp, meaning open <= ts < close.
+let candle: Option<Ohlcv> = obs.market_view.find_candle(&self.m15_id, some_ts);
+
+// Every market this environment trades.
+let markets: Arc<[MarketId]> = obs.market_view.market_ids();
+```
+
+`try_resolved_close_price` is the safe way to ask "what is this worth right now". It looks at every stream that can produce a close price, keeps the one with the newest timestamp, and never reads past the current step. It returns an error when no stream has data for that symbol yet, which happens before an asset's first tick.
+
+### 8d. Portfolio state (`obs.states`)
+
+The engine splits trades into two groups. Live trades are pending and active ones, and they are cheap to iterate. Archived trades are closed and canceled ones, which you normally only read for reporting.
+
+```rust
+// The two calls almost every agent needs.
+let busy = obs.states.any_active_trade_for_agent(&self.identifier());          // bool
+if let Some((market_id, trade)) = obs.states.find_active_trade_for_agent(&self.agent_id) {
+    let id = trade.trade_id();
+}
+
+// Iterating.
+for trade in obs.states.iter_live() { /* pending and active */ }
+for (market_id, trade) in obs.states.iter_live_with_market() { /* same, with market */ }
+for trade in obs.states.iter_archive() { /* closed and canceled */ }
+for trade in obs.states.iter_all() { /* everything */ }
+
+// Direct lookups.
+let trade: Option<&State> = obs.states.get_by_id(&TradeId(7)); // live trades only
+let per_market: &[State] = obs.states.get_live_trades(&market_id);
+
+// Portfolio level.
+let flat = obs.states.all_closed();                    // bool, nothing live anywhere
+let pnl = obs.states.pnl();                            // f64, realized plus unrealized
+let markets = obs.states.markets();                    // iterator over MarketId
+```
+
+**Important:** `any_active_trade_for_agent` and `find_active_trade_for_agent` match **active** trades only. A limit order that has not filled yet is **pending**, not active, so both calls ignore it. If your strategy places pending orders, track their ids in your own state, or use `iter_live()` and check `is_pending()` yourself. A bracket strategy that places two limit orders and cancels the loser depends on exactly this distinction.
+
+`get_by_id` searches live trades only. It returns `None` once a trade has closed or been canceled.
+
+`pnl()` is the running total of realized and unrealized profit since the episode began. It does not reset between steps.
+
+### 8e. Reading one trade (`State`)
+
+`States` hands you a `&State`. It covers all four lifecycle stages, so several accessors return `Option` and give you `None` when the stage does not have that information.
+
+```rust
+// Identity.
+let id: TradeId = trade.trade_id();
+let agent: &AgentIdentifier = trade.agent_id();
+let direction: TradeKind = trade.trade_kind();
+let qty: Quantity = trade.quantity();
+
+// Order levels.
+let sl: Option<Price> = trade.stop_loss();
+let tp: Option<Price> = trade.take_profit();
+let entry: Price = trade.anticipated_entry_price(); // limit price while pending, fill price once active
+
+// Lifecycle. Prefer these over guessing from other fields.
+let stage: StateKind = trade.kind();   // Pending, Active, Closed, or Canceled
+trade.is_pending(); trade.is_active(); trade.is_closed(); trade.is_canceled();
+
+// Profit and loss. Active gives unrealized, Closed gives realized,
+// and pending or canceled trades give None.
+let pnl: Option<f64> = trade.pnl_usd();
+let pnl_ticks: Option<Tick> = trade.pnl_ticks(symbol);
+
+// Planned risk from the stop loss and take profit. These need the symbol
+// because ticks and USD depend on the contract.
+let risk_ticks: Option<Tick> = trade.expected_loss_in_ticks(symbol);
+let reward_ticks: Option<Tick> = trade.expected_profit_in_ticks(symbol);
+let risk_usd: Option<f64> = trade.expected_loss_in_usd(symbol);
+let reward_usd: Option<f64> = trade.expected_profit_in_usd(symbol);
+let rrr: Option<RiskRewardRatio> = trade.risk_reward_ratio(symbol); // read it with .ratio()
+
+// Timing and outcome.
+let entered: Option<DateTime<Utc>> = trade.entry_ts();       // active and closed only
+let exited: Option<DateTime<Utc>> = trade.exit_ts();         // closed and canceled only
+let exit_px: Option<Price> = trade.exit_price();             // closed only
+let why: Option<TerminationReason> = trade.exit_reason();    // StopLoss, TakeProfit, MarketClose, Canceled
+```
+
+Use `exit_reason()` when you want to react to how the last trade ended, for example to stop trading for the session after a stop loss.
+
+### Key event payloads
+
+- **`Ohlcv`**: `.open`, `.high`, `.low`, `.close` (all `Price`), `.volume` (`Volume`), `.open_timestamp`, `.close_timestamp` (`DateTime<Utc>`). Helper `.direction()` returns `CandleDirection::{Bullish, Bearish, Doji}`.
+- **`TradeEvent`**: `.price` (`Price`), `.quantity` (`Quantity`), `.is_buyer_maker` (`Option<LiquiditySide>`). This is a raw market execution, not your own trade.
+- **`EconomicEvent`**: `.timestamp`, `.actual`, `.forecast`, `.previous` (all `Option<EconomicValue>`), `.economic_impact` (`EconomicEventImpact`).
+- **`VolumeProfile` and `Tpo`**: `.poc`, `.value_area_high`, `.value_area_low` (all `Price`).
+- **`OhlcvSession`** (from the batch overnight range): `.session` (`SessionDate`), `.open_timestamp`, `.close_timestamp`, `.high`, `.low`, `.highest_close`, `.lowest_close`, `.volume`, `.vwap`.
 
 ## 9. Emitting Actions
 
@@ -293,7 +414,7 @@ self.trade_counter += 1;
 let cmd = OpenCmd {
     agent_id: self.identifier(),
     trade_id: TradeId(self.trade_counter),
-    trade_type: TradeKind::Long,       // or TradeKind::Short
+    trade_kind: TradeKind::Long,       // or TradeKind::Short
     quantity: Quantity(1.0),
     entry_price: None,                 // None = market order; Some(Price(x)) = limit
     stop_loss: Some(Price(stop)),
@@ -349,7 +470,7 @@ use itertools::iproduct;
 
 pub fn build(self) -> ChapatyResult<Vec<(usize, MyAgent)>> {
     let sl_mults = GridAxis::new("0.8", "2.1", "0.1")?.generate(); // floats
-    let lookbacks: Vec<i64> = vec![14, 20, 30, 45, 60];           // ints
+    let lookbacks: Vec<i64> = vec![14, 20, 30, 45, 60];            // ints
 
     Ok(iproduct!(sl_mults, lookbacks)
         .filter(|(sl, _)| *sl > 0.0)
