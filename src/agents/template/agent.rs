@@ -267,10 +267,16 @@ const fn ohlcv_future_query() -> OhlcvFutureQuery {
 
 #[expect(
     clippy::expect_used,
-    reason = "If calling `.to_id()` on `OhlcvFutureQuery` fails, the core `chapaty` crate has a bug that must be reported."
+    reason = "`ohlcv_future_query()` is a hardcoded, valid literal. If `to_id()` fails, it indicates an issue within `chapaty` itself rather than this template. Panicking here is expected to ensure the problem surfaces immediately instead of being swallowed or mistaken for a configuration error."
 )]
 fn ohlcv_future_id() -> OhlcvId {
-    ohlcv_future_query()
-        .to_id()
-        .expect("OhlcvFutureQuery should always yield a valid OhlcvId")
+    ohlcv_future_query().to_id().expect(
+        "\n\n\
+        ┌─────────────────────────────────────────────────────────────┐\n\
+        │ CHAPATY BUG: to_id() rejected a hardcoded OhlcvFutureQuery. │\n\
+        │ This is not a template or user error.                       │\n\
+        │ Report: https://github.com/LenWilliamson/chapaty/issues     │\n\
+        │ Or on Discord: https://discord.gg/MmMAB6NCuK                │\n\
+        └─────────────────────────────────────────────────────────────┘\n\n",
+    )
 }

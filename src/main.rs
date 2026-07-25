@@ -87,8 +87,8 @@ async fn run() -> Result<()> {
 ///    - trade statistics,
 ///    - end-of-day equity curve.
 /// 2. **Grid search:** evaluates every `(uid, agent)` pair in `grid` in
-///    parallel via `rayon`, retaining the top [`LEADERBOARD_TOP_K`] performers,
-///    and writes the resulting leaderboard.
+///    parallel via `rayon`, retaining the top 10% performers, and writes the
+///    resulting leaderboard.
 ///
 /// All output files are written to the default results directory.
 ///
