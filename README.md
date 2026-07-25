@@ -5,11 +5,13 @@
 [![CI (Develop)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yaml/badge.svg?branch=develop)](https://github.com/LenWilliamson/chapaty-template/actions/workflows/ci.yaml)
 [![Chapaty](https://img.shields.io/crates/v/chapaty.svg?label=chapaty)][chapaty-crate]
 
-> **Welcome to Chapaty!** Trying out a new framework can be frustrating if things break on day one. If you run into setup issues, framework bugs, or missing data, please reach out on [Discord][discord]. We want to ensure a smooth developer experience and will fix framework bugs promptly.
+The fastest way to build quantitative trading agents in Rust.
 
-This repository is the fastest way to start building quantitative trading agents in Rust. Designed with a familiar [**Gym-style API**][gymnasium] (`reset`, `step`, `act`), the [`chapaty`][chapaty-crate] crate evaluates parallel backtests efficiently. This template wires the core engine up with an LLM-friendly workflow and an automated QuantStats HTML tearsheet.
+[▶️ **Try Web Demo**][chapaty] | [🔬 **Read Deep Dive**][blog-deep-dive] | [👾 **Join Discord**][discord]
 
-**You don't need to be a Rust expert.** Describe your strategy in plain English, and instruct your LLM of choice to generate the Rust code using the provided `AI.md` instructions (see: [Vibe-Coding Workflow](#vibe-coding-workflow)). For a technical deep dive into the design decisions behind the engine: timeframe synchronization, fill modeling, and parallel grid search you can read the companion blog post: [**A Gym-style API for algorithmic trading research, in Rust**][blog-deep-dive].
+---
+
+**Chapaty** brings a familiar [Gym-style API][gymnasium] (`reset`, `step`, `act`) to algorithmic trading research. Built in Rust for high-performance parallel backtesting, this template provides an LLM-friendly workflow and automated [QuantStats](https://github.com/ranaroussi/quantstats) HTML tearsheets out of the box.
 
 ![End-to-end Chapaty workflow: running `make run` executes the demo strategy and produces a QuantStats tearsheet.][workflow-gif]
 
@@ -42,7 +44,7 @@ open chapaty/reports/tearsheet.html        # macOS
 
 | Tool                         | Installation                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Rust** (`rustup`, `cargo`) | [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install) (Requires 1.95.0+, Edition 2024) |
+| **Rust** (`rustup`, `cargo`) | [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install) (Requires 1.97.0+, Edition 2024) |
 | **Python** (`3.13.1+`)       | [pyenv](https://github.com/pyenv/pyenv#installation) is recommended.                                    |
 | **LLM Environment**          | Claude Code, DeepSeek, Gemini CLI, Aider, Cursor, etc.                                                  |
 
@@ -57,11 +59,6 @@ The included `Makefile` is designed for Unix-like systems. To run this project o
 
 Chapaty uses pre-compiled `.postcard` environments hosted for free on [Hugging Face Datasets][hf-datasets]. Your first `make run` automatically downloads and caches the required data locally.
 
-**Currently available datasets:**
-
-- Binance BTC/USDT (Daily spot, 1h / 1m spot, with SMA / TPO / Volume Profile variants)
-- NinjaTrader CME EUR/USD futures (1m / 5m, with US high-impact employment news)
-
 Need a different dataset or timeframe? Drop a request in the `#data-requests` channel on [Discord][discord].
 
 ## Technical Analysis and Indicators
@@ -74,35 +71,6 @@ Chapaty includes pre-calculated technical analysis out of the box, so your agent
 
 Need a specific indicator we don't have? Please open a **Feature Request** on the [Chapaty core repository][chapaty-repo-issues] (including the mathematical formula or reference implementation), or simply drop a request in the `#data-requests` channel on [Discord][discord].
 
-## Vibe-Coding Workflow
-
-1. **Describe your idea:**
-
-   ```bash
-   mkdir -p src/agents/my_strategy
-   touch src/agents/my_strategy/spec.md
-   ```
-
-2. **Dump your thoughts into `spec.md`:**
-   Paste a PDF excerpt, a Pine Script / Python snippet, a blog URL, or a rough paragraph. No formal structure is required.
-
-   **Example Idea:**
-
-   > "Build a simple RSI Mean Reversion strategy using the standard EOD Binance BTC/USDT dataset. Track a 14-period RSI using `StreamingRsi`. Go long when the RSI drops below 30, and short when it exceeds 70. Close the position when the RSI crosses back over the 50 neutral line."
-
-3. **Prompt your LLM:**
-   Copy and paste this prompt into your AI coding tool:
-
-   ```text
-   Read `AI.md` and `src/agents/my_strategy/spec.md`. Ask me clarifying questions about entries, exits, stop-loss, take-profit, timeframes, and assets. Once approved, rewrite `spec.md` into a formal specification, build the strategy in `src/agents/my_strategy/agent.rs`, and wire it into `src/main.rs`.
-   ```
-
-4. **Run and Review:**
-   ```bash
-   make run
-   open chapaty/reports/tearsheet.html
-   ```
-
 ## Staying Updated
 
 Chapaty is evolving. To pull the latest AI prompts and updated visualization scripts without breaking your custom strategies:
@@ -113,7 +81,7 @@ make update
 
 This synchronizes `AI.md`, the entire `.ai/` directory, and the `visualization/` directory with the upstream `main` branch, runs a global `cargo update` to fetch the latest patch versions of all Rust dependencies, and finally refreshes the `Makefile` itself.
 
-If the `Makefile` changed, re-run `make update` to apply the new logic.
+If the `Makefile` changed, re-run `make update` once to apply the new logic.
 
 > **Warning:** Any manual changes to `AI.md`, the `.ai/` directory, the `visualization/` directory, or the `Makefile` will be overwritten. Your `src/` directory and `Cargo.toml` are left untouched — only `cargo update` will modify `Cargo.lock`.
 
@@ -154,7 +122,7 @@ chapaty-template/
 ├── bin/
 │   └── pre-push.sh              # fmt + clippy + audit + test + doc + build (you may delete this)
 ├── chapaty/
-│   └── reports/                 # Output reports and CSVs
+│   └── reports/                 # Output reports and CSVs (generated after `make run`)
 │       ├── cumulative_returns.csv
 │       ├── equity_curve.csv
 │       ├── journal.csv
@@ -213,6 +181,7 @@ This software is provided **“AS IS”**, without warranties or conditions of a
 
 By using Chapaty, you acknowledge that **you are solely responsible for any trading decisions, strategies, or outcomes**.
 
+[chapaty]: https://chapaty.com
 [discord]: https://discord.gg/MmMAB6NCuK
 [chapaty-crate]: https://crates.io/crates/chapaty
 [hf-datasets]: https://huggingface.co/datasets/chapaty/environments
