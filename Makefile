@@ -38,19 +38,17 @@ run:
 		echo "ERROR: Python virtual environment not found. Please run 'make setup' first."; \
 		exit 1; \
 	fi
-	@AGENT=$$(grep -E '^const ACTIVE_AGENT' src/main.rs \
-	          | grep -oE 'ActiveAgent::[A-Za-z0-9_]+' \
-	          | sed -E 's/ActiveAgent:://' \
-	          | tr '[:upper:]' '[:lower:]'); \
+	@AGENT="$$ACTIVE_AGENT"; \
 	if [ -z "$$AGENT" ]; then \
-		echo "ERROR: Could not parse ACTIVE_AGENT from src/main.rs."; \
-		echo "       Expected a line like: const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo;"; \
-		exit 1; \
+		AGENT=$$(grep -E '^const ACTIVE_AGENT' src/main.rs \
+		          | grep -oE 'ActiveAgent::[A-Za-z0-9_]+' \
+		          | sed -E 's/ActiveAgent:://'); \
 	fi; \
+	AGENT=$$(printf '%s' "$${AGENT:-Demo}" | tr '[:upper:]' '[:lower:]'); \
 	echo ">> Active agent: $$AGENT"; \
 	echo ">> Running Chapaty backtest natively (target-cpu=native) with increased stack size of 64MiB..."; \
 	echo ">> (See .ai/rust-vibe-rules.md for RUST_MIN_STACK sizing guidance.)"; \
-	RUSTFLAGS="$(CARGO_RUSTFLAGS)" RUST_MIN_STACK=67108864 cargo run --release && \
+	RUSTFLAGS="$(CARGO_RUSTFLAGS)" RUST_MIN_STACK=67108864 RUST_BACKTRACE=1 cargo run --release && \
 	echo ">> Generating QuantStats tearsheet for agent: $$AGENT" && \
 	$(VENV_PYTHON) visualization/generate_tearsheet.py $$AGENT
 	@echo ">> Run completed."

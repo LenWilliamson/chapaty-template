@@ -1,2 +1,2 @@
 pub mod demo;
-pub mod demo2;
+pub mod template;

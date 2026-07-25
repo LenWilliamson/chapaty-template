@@ -1,10 +1,15 @@
 """
 Generate a QuantStats HTML tearsheet from a Chapaty Equity Curve.
 
-Reads `chapaty/reports/<agent>/equity_curve.parquet` if present, else falls
-back to the corresponding `.csv`. The agent subdirectory is passed as the
-first CLI argument (e.g. `python generate_tearsheet.py demo`) and matches
-the `ActiveAgent` variant name (lowercased) declared in `src/main.rs`.
+Mirrors `src/main.rs`'s `save_report`: if `RESULTS_CLOUD_URI` is set (a
+"gs://bucket/prefix" URI), the equity curve is read from
+`{RESULTS_CLOUD_URI}/{agent}/equity_curve.csv` and the finished tearsheet
+is uploaded back to `{RESULTS_CLOUD_URI}/{agent}/tearsheet.html`. Otherwise
+both read and write stay local: `chapaty/reports/<agent>/equity_curve.parquet`
+(falling back to the `.csv`) and `chapaty/reports/<agent>/tearsheet.html`.
+The agent subdirectory is passed as the first CLI argument (e.g.
+`python generate_tearsheet.py demo`) and matches the `ActiveAgent` variant
+name (lowercased) declared in `src/main.rs`.
 
 Converts the pre-downsampled Mark-to-Market (M2M) PnL snapshots from the
 chapaty lib into a continuous, daily percentage return series required by
@@ -17,12 +22,16 @@ environment, which is handled automatically by running `make run`.
 from __future__ import annotations
 
 import argparse
+import io
+import os
 import sys
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import quantstats as qs
+from dotenv import load_dotenv
+from google.cloud.storage import Blob, Client
 
 INITIAL_CAPITAL: float = 10_000.0
 BENCHMARK_TICKER: str = "SPY"  # SPDR S&P 500 ETF
@@ -42,12 +51,12 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "agent",
-        help="Agent subdirectory under chapaty/reports/ (e.g. 'demo', 'demo2').",
+        help="Agent subdirectory under chapaty/reports/ (e.g. 'demo', 'template').",
     )
     return parser.parse_args()
 
 
-def load_equity_curve(reports_dir: Path) -> pd.DataFrame:
+def load_equity_curve_local(reports_dir: Path) -> pd.DataFrame:
     parquet_path = reports_dir / "equity_curve.parquet"
     csv_path = reports_dir / "equity_curve.csv"
 
@@ -64,6 +73,45 @@ def load_equity_curve(reports_dir: Path) -> pd.DataFrame:
         file=sys.stderr,
     )
     sys.exit(1)
+
+
+def load_equity_curve_cloud(
+    client: Client, bucket_uri: str, agent: str
+) -> pd.DataFrame:
+    blob = Blob.from_string(
+        f"{bucket_uri.rstrip('/')}/{agent}/equity_curve.csv", client=client
+    )
+
+    print(f"[tearsheet] Reading gs://{blob.bucket.name}/{blob.name}")
+    if not blob.exists():
+        print(
+            f"[tearsheet] ERROR: no equity curve found at gs://{blob.bucket.name}/{blob.name}. "
+            f"Did the backtest run with RESULTS_CLOUD_URI set?",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    return pd.read_csv(io.BytesIO(blob.download_as_bytes()))
+
+
+def upload_tearsheet_cloud(
+    client: Client, output_path: Path, bucket_uri: str, agent: str
+) -> None:
+    blob = Blob.from_string(
+        f"{bucket_uri.rstrip('/')}/{agent}/{output_path.name}", client=client
+    )
+
+    print(
+        f"[tearsheet] Uploading {output_path} to gs://{blob.bucket.name}/{blob.name}..."
+    )
+    try:
+        blob.upload_from_filename(str(output_path))
+        print(f"[tearsheet] Uploaded to gs://{blob.bucket.name}/{blob.name}")
+    except Exception as e:  # noqa: BLE001 - best-effort upload, never fail the run over it
+        print(
+            f"[tearsheet] WARNING: failed to upload to gs://{blob.bucket.name}/{blob.name}: {e}",
+            file=sys.stderr,
+        )
 
 
 def build_return_series(df: pd.DataFrame) -> pd.Series:
@@ -111,18 +159,26 @@ def build_return_series(df: pd.DataFrame) -> pd.Series:
 
 
 def main() -> int:
+    load_dotenv(PROJECT_ROOT / ".env")
+
     args = parse_args()
     reports_dir = REPORTS_ROOT / args.agent
     output_path = reports_dir / "tearsheet.html"
 
-    if not reports_dir.is_dir():
-        print(
-            f"[tearsheet] ERROR: agent directory not found: {reports_dir}",
-            file=sys.stderr,
-        )
-        return 1
+    bucket_uri = os.environ.get("RESULTS_CLOUD_URI")
+    client = Client() if bucket_uri else None
 
-    df = load_equity_curve(reports_dir)
+    if bucket_uri:
+        df = load_equity_curve_cloud(client, bucket_uri, args.agent)
+    else:
+        if not reports_dir.is_dir():
+            print(
+                f"[tearsheet] ERROR: agent directory not found: {reports_dir}",
+                file=sys.stderr,
+            )
+            return 1
+        df = load_equity_curve_local(reports_dir)
+
     returns = build_return_series(df)
 
     if returns.empty or np.isclose(returns, 0.0, atol=1e-8).all():
@@ -150,6 +206,10 @@ def main() -> int:
     )
 
     print(f"[tearsheet] Wrote {output_path}")
+
+    if bucket_uri:
+        upload_tearsheet_cloud(client, output_path, bucket_uri, args.agent)
+
     return 0
 
 

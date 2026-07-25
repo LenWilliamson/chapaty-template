@@ -60,9 +60,7 @@ Never use `.unwrap()` or `.expect()` inside the `act()` method. Market data is a
 
 ## 6. Always Return `ChapatyResult<T>`
 
-Agent methods and helpers that can fail must return `ChapatyResult<T>`.
-For user-caused invalid input (e.g., bad parameters in the constructor), return:
-`Err(AgentError::InvalidInput("...".to_string()).into())`
+Agent methods and helpers that can fail must return `ChapatyResult<T>`. For user-caused invalid input (e.g., bad parameters in the constructor), return: `Err(AgentError::InvalidInput("...".to_string()).into())`
 
 ## 7. Struct-Init is the Constructor Style
 
@@ -76,11 +74,11 @@ The engine handles async data streaming; the agent itself is synchronous. `act` 
 
 For temporary, quick-and-dirty debugging of logic errors, using `dbg!` and `println!` is completely fine. However, **you MUST remove them before finalizing the agent or running grid searches**, as printing on every tick will severely bottleneck the CPU.
 
-For permanent production logging, use `tracing::debug!` or `tracing::info!`, and limit logs to state transitions (e.g., "Entered Trade", "Phase Changed"). If the user wants to set up the tracing subscriber, direct them to `examples/logging.rs` in the core Chapaty repo.
+For permanent production logging, use `tracing::debug!` or `tracing::info!`, and limit logs to state transitions (e.g., "Entered Trade", "Phase Changed"). If the user wants to set up the tracing subscriber, direct them to [`examples/quickstart.rs`](https://github.com/LenWilliamson/chapaty/blob/main/examples/quickstart.rs) in the core Chapaty repo.
 
 ## 10. One Agent = One File
 
-Do not split `agent.rs` into multiple files unless the user explicitly asks. Keep the agent's state struct, helper `impl`, and `impl Agent` cleanly organized within a single `src/agents/<name>/agent.rs` file.
+Do not split `agent.rs` into multiple files. Keep the agent's state struct, helper `impl`, and `impl Agent` cleanly organized within a single `src/agents/<name>/agent.rs` file.
 
 ## 11. Test IDs with `..Default::default()`
 
@@ -105,8 +103,7 @@ fatal runtime error: stack overflow, aborting
 
 The user's agent logic is almost certainly **not** the cause. Do not start hunting for recursion in `act()`. The chapaty engine evaluates grid agents on Rayon worker threads. The engine's internal call stack can exceed `RUST_MIN_STACK` on worker threads even when the main-thread run succeeds.
 
-**Fix:** bump `RUST_MIN_STACK` for the worker threads. The template's
-`Makefile` already sets this on the `run` target:
+**Fix:** bump `RUST_MIN_STACK` for the worker threads. The template's `Makefile` already sets this on the `run` target:
 
 ```makefile
 RUST_MIN_STACK=67108864 cargo run --release   # 64 MiB

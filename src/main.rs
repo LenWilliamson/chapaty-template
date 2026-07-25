@@ -1,113 +1,109 @@
-use anyhow::{Context, Result};
+use std::{path::Path, str::FromStr, sync::LazyLock};
+
+use anyhow::Result;
 use chapaty::prelude::*;
+use rand::seq::SliceRandom;
 use serde::Serialize;
-use std::path::Path;
-use strum::{AsRefStr, EnumString};
+use strum::{AsRefStr, Display, EnumString};
 
 use crate::agents::{
     demo::{DemoAgent, DemoAgentGrid},
-    demo2::{Demo2Agent, Demo2AgentGrid},
+    template::{TemplateAgent, TemplateAgentGrid},
 };
 
 mod agents;
+mod crash;
 
-/// Which agent to run. Change this one line to switch.
-const ACTIVE_AGENT: ActiveAgent = ActiveAgent::Demo;
+/// Number of agents randomly selected from the agent grid.
+static GRID_SEARCH_LIMIT: LazyLock<usize> = LazyLock::new(|| {
+    std::env::var("GRID_SEARCH_LIMIT")
+        .ok()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(100)
+});
 
-/// Max number of top performers to retain in the leaderboard.
-const LEADERBOARD_TOP_K: usize = 100;
+/// Local root directory for all generated reports.
+static RESULTS_LOCAL_DIR: &str = "chapaty/reports";
 
-/// Root directory for all generated reports.
-const REPORTS_ROOT: &str = "chapaty/reports";
+/// Cloud uri for all generated reports.
+static RESULTS_CLOUD_URI: LazyLock<Option<String>> =
+    LazyLock::new(|| std::env::var("RESULTS_CLOUD_URI").ok());
 
-/// Available agents. Add a variant + a match arm in `main` to register a new one.
-#[derive(Debug, Clone, Copy, AsRefStr, EnumString)]
+/// Which agent to run.
+static ACTIVE_AGENT: LazyLock<ActiveAgent> = LazyLock::new(|| {
+    std::env::var("ACTIVE_AGENT")
+        .ok()
+        .and_then(|s| ActiveAgent::from_str(s.trim()).ok())
+        .unwrap_or(ActiveAgent::Demo)
+});
+
+#[derive(Debug, Clone, Copy, AsRefStr, EnumString, Display)]
 #[strum(serialize_all = "lowercase")]
 enum ActiveAgent {
     Demo,
-    Demo2,
+    Template,
 }
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    println!(">> Loading environment from Hugging Face...");
-    let mut env = environment().await?;
-    let ohlcv = ohlcv_id();
-
-    let reports_dir = Path::new(REPORTS_ROOT).join(ACTIVE_AGENT.as_ref());
-    let file_cfg = FileConfig::default().with_dir(&reports_dir);
-
-    match ACTIVE_AGENT {
-        ActiveAgent::Demo => run_workflow(
-            &mut env,
-            &file_cfg,
-            DemoAgent::new(ohlcv, 20, 50),
-            DemoAgentGrid::baseline(ohlcv)?.build(),
-        ),
-        ActiveAgent::Demo2 => run_workflow(
-            &mut env,
-            &file_cfg,
-            Demo2Agent::new(ohlcv),
-            Demo2AgentGrid::baseline(ohlcv)?.build(),
-        ),
+async fn main() {
+    crash::install_panic_hook();
+    if let Err(err) = run().await {
+        crash::handle_fatal_error(err).await;
     }
 }
 
-async fn environment() -> Result<Environment> {
-    let preset = EnvPreset::BinanceBtcUsdt1d;
-    let file_stem = preset.to_string();
+async fn run() -> Result<()> {
+    dotenvy::dotenv().ok();
+    println!(">> Loading environment...");
 
-    let loc = StorageLocation::HuggingFace { version: None };
-    let cfg = IoConfig::new(loc).with_file_stem(&file_stem);
-
-    chapaty::load(preset, &cfg)
-        .await
-        .context("Failed to load trading environment")
-}
-
-fn ohlcv_id() -> OhlcvId {
-    OhlcvId {
-        broker: DataBroker::Binance,
-        exchange: Exchange::Binance,
-        symbol: Symbol::Spot(SpotPair::BtcUsdt),
-        period: Period::Day(1),
+    match *ACTIVE_AGENT {
+        ActiveAgent::Demo => {
+            backtest(
+                &mut DemoAgent::env().await?,
+                DemoAgent::new(),
+                DemoAgentGrid::baseline().build(),
+            )
+            .await
+        }
+        ActiveAgent::Template => {
+            backtest(
+                &mut TemplateAgent::env().await?,
+                TemplateAgent::new(),
+                TemplateAgentGrid::baseline()?.build(),
+            )
+            .await
+        }
     }
 }
 
 /// Runs a baseline backtest followed by a parallel grid search.
 ///
-/// # Workflow
+/// # Backtest steps
 ///
-/// 1. **Baseline backtest** — evaluates `baseline` and writes:
+/// 1. **Baseline backtest:** evaluates `baseline` and writes:
 ///    - the trade journal,
 ///    - cumulative returns,
 ///    - portfolio performance,
 ///    - trade statistics,
 ///    - end-of-day equity curve.
-/// 2. **Grid search** — evaluates every `(uid, agent)` pair in `grid` in
-///    parallel via `rayon`, retaining the top [`LEADERBOARD_TOP_K`] performers,
-///    and writes the resulting leaderboard.
+/// 2. **Grid search:** evaluates every `(uid, agent)` pair in `grid` in
+///    parallel via `rayon`, retaining the top 10% performers, and writes the
+///    resulting leaderboard.
 ///
-/// All output files are written to `file_cfg`'s directory.
+/// All output files are written to the default results directory.
 ///
 /// # Arguments
 ///
 /// * `env` — the loaded trading [`Environment`].
-/// * `file_cfg` — destination configuration for every report this function emits.
 /// * `baseline` — the single agent to backtest for the tearsheet.
-/// * `grid` — `(uid, agent)` pairs to backtest in parallel. UIDs are caller-assigned and
-///   surface in the leaderboard for traceability.
+/// * `grid` — `(uid, agent)` pairs to backtest in parallel. UIDs are
+///   caller-assigned and surface in the leaderboard for traceability.
 ///
 /// # Performance
 ///
-/// Before launching a large grid, benchmark a single agent with
-/// [`Environment::evaluate_agent`] and estimate total time as: `(single_agent_time * grid.len()) / cpu_cores`.
-fn run_workflow<T>(
-    env: &mut Environment,
-    file_cfg: &FileConfig,
-    mut baseline: T,
-    grid: Vec<(usize, T)>,
-) -> Result<()>
+/// The estimated total runtime of a gridsearch is:
+/// `(single_agent_time * grid.len()) / cpu_cores`.
+async fn backtest<T>(env: &mut Environment, mut baseline: T, grid: Vec<(usize, T)>) -> Result<()>
 where
     T: Agent + Send + Serialize,
 {
@@ -116,19 +112,47 @@ where
     println!(">> Running {label} baseline backtest...");
     let journal = env.evaluate_agent(&mut baseline)?;
 
-    journal.to_file_sync(file_cfg)?;
-    journal.cumulative_returns()?.to_file_sync(file_cfg)?;
-    journal.portfolio_performance()?.to_file_sync(file_cfg)?;
-    journal.trade_stats()?.to_file_sync(file_cfg)?;
-    env.equity_curve_report()?
-        .into_eod()?
-        .to_file_sync(file_cfg)?;
+    save_report(&journal).await?;
+    save_report(&journal.cumulative_returns()?).await?;
+    save_report(&journal.portfolio_performance()?).await?;
+    save_report(&journal.trade_stats()?).await?;
+    save_report(&env.equity_curve_report()?.into_eod()?).await?;
+
     println!(">> {label} baseline backtest complete.");
 
     println!(">> Evaluating agents in parallel...");
-    let leaderboard = env.evaluate_agents(grid, LEADERBOARD_TOP_K)?;
-    leaderboard.to_file_sync(file_cfg)?;
+    let top_k = (*GRID_SEARCH_LIMIT / 10).clamp(10, 100);
+    let leaderboard = env.evaluate_agents(subset(grid), top_k)?;
+    save_report(&leaderboard).await?;
     println!(">> {label} grid evaluation complete. Leaderboard saved.");
 
     Ok(())
+}
+
+fn subset<T>(mut agents: Vec<(usize, T)>) -> Vec<(usize, T)> {
+    agents.shuffle(&mut rand::rng());
+    agents.truncate(*GRID_SEARCH_LIMIT);
+    agents
+}
+
+/// Writes `report` to the cloud bucket if `RESULTS_CLOUD_URI` is set,
+/// otherwise to local disk.
+async fn save_report<R>(report: &R) -> Result<()>
+where
+    R: Report + ReportName + ToSchema + Sync + Send,
+{
+    let agent = ACTIVE_AGENT.as_ref();
+    if let Some(prefix) = RESULTS_CLOUD_URI.as_deref() {
+        let dest = join(prefix, &format!("{agent}/{}.csv", report.base_name()));
+        report.to_cloud(&CloudConfig::new(dest)).await?;
+    } else {
+        let reports_dir = Path::new(RESULTS_LOCAL_DIR).join(agent);
+        report.to_file_sync(&FileConfig::default().with_dir(reports_dir))?;
+    }
+    Ok(())
+}
+
+fn join(prefix: &str, file_name: &str) -> String {
+    let p = prefix.trim_end_matches('/');
+    format!("{p}/{file_name}")
 }
