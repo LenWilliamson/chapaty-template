@@ -185,20 +185,21 @@ impl Agent for TemplateAgent {
         let active_trade = obs.states.find_active_trade_for_agent(&self.identifier());
         let market_id: MarketId = self.ohlcv_future_id.into();
 
-        // 4. Drive the state machine. Replace the placeholder conditions with your logic.
+        // 4. Drive the state machine. Replace the placeholder decisions with your logic.
         let actions = match self.state {
             AgentState::PreTrade => {
                 // Evaluate your entry condition here, for example from a streaming
-                // indicator or the candle. When it triggers, open a trade and advance to
-                // `InTrade`.
-                let entry_signal = false; // TODO: replace with your entry condition.
-                if entry_signal {
-                    self.state = AgentState::InTrade {
-                        entry_time: market_view.current_timestamp(),
-                    };
-                    Actions::from((market_id, self.open_market(TradeKind::Long)))
-                } else {
-                    Actions::no_op()
+                // indicator or the candle, and return `EntrySignal::Enter(direction)`
+                // when it triggers.
+                let signal = EntrySignal::Stay; // TODO: replace with your entry condition.
+                match signal {
+                    EntrySignal::Enter(direction) => {
+                        self.state = AgentState::InTrade {
+                            entry_time: market_view.current_timestamp(),
+                        };
+                        Actions::from((market_id, self.open_market(direction)))
+                    }
+                    EntrySignal::Stay => Actions::no_op(),
                 }
             }
 
@@ -210,21 +211,25 @@ impl Agent for TemplateAgent {
                     .current_timestamp()
                     .signed_duration_since(entry_time)
                     .num_minutes();
-                let time_exit = held_minutes >= 30; // TODO: make this a grid parameter.
+                let decision = if held_minutes >= 30 {
+                    ExitDecision::Close // TODO: make the holding time a grid parameter.
+                } else {
+                    ExitDecision::Hold
+                };
 
-                match active_trade {
+                match (active_trade, decision) {
                     // The trade is still open and our exit rule fired: close it.
-                    Some((_, state)) if time_exit => {
+                    (Some((_, state)), ExitDecision::Close) => {
                         self.state = AgentState::PostTrade;
                         Actions::from((market_id, self.close_market(state.trade_id())))
                     }
                     // The engine already closed the trade on its stop loss or take profit.
-                    None => {
+                    (None, _) => {
                         self.state = AgentState::PostTrade;
                         Actions::no_op()
                     }
                     // The trade is still open: keep holding.
-                    Some(_) => Actions::no_op(),
+                    (Some(_), ExitDecision::Hold) => Actions::no_op(),
                 }
             }
 
@@ -288,6 +293,28 @@ impl Default for AgentState {
     fn default() -> Self {
         Self::PreTrade
     }
+}
+
+/// The outcome of evaluating the entry condition in the `PreTrade` state.
+#[expect(
+    dead_code,
+    reason = "Template placeholder. The `Enter` variant is constructed once you implement the entry condition."
+)]
+#[derive(Debug, Clone, Copy)]
+enum EntrySignal {
+    /// Open a new trade in the given direction.
+    Enter(TradeKind),
+    /// No entry condition met. Stay flat.
+    Stay,
+}
+
+/// The outcome of evaluating the exit rule for an open trade in the `InTrade` state.
+#[derive(Debug, Clone, Copy)]
+enum ExitDecision {
+    /// Close the open trade now.
+    Close,
+    /// Keep the open trade.
+    Hold,
 }
 
 // ================================================================================================
