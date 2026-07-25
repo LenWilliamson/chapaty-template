@@ -12,7 +12,7 @@
 //! too much data
 //!
 //! Everything is just an example also the implementation of the act function
-//! maybe a AgentPhase is not needed at all and complicates the implementqtion
+//! maybe a `AgentPhase` is not needed at all and complicates the implementqtion
 
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -27,8 +27,8 @@ use serde::Serialize;
 /// The parameters used for grid search are exactly those parameters
 /// that are configurations for the trading agents behaviour.
 ///
-/// For each Simulation Data stream ID one should add a last_processed_ts to
-/// handle idempotency. So for ohlcv_id_2 we would have last_processed_ts_2.
+/// For each Simulation Data stream ID one should add a `last_processed_ts` to
+/// handle idempotency. So for `ohlcv_id_2` we would have `last_processed_ts_2`.
 #[derive(Debug, Clone, Serialize)]
 pub struct TemplateAgent {
     // === Simulation Data Stream IDs to access data streams (always `#[serde(skip)]`) ===
@@ -128,9 +128,9 @@ impl Agent for TemplateAgent {
 
         // 3. Entry Logic / Trade Management / Exit Logic for the current state
         let actions = match self.state {
-            AgentState::PreTrade { .. } => Actions::no_op(),
-            AgentState::InTrade { .. } => Actions::no_op(),
-            AgentState::PostTrade => Actions::no_op(),
+            AgentState::PreTrade { .. } | AgentState::InTrade { .. } | AgentState::PostTrade => {
+                Actions::no_op()
+            }
         };
 
         // 4. Return the actions to execute
@@ -139,7 +139,7 @@ impl Agent for TemplateAgent {
 }
 
 impl TemplateAgent {
-    #[allow(
+    #[expect(
         dead_code,
         reason = "Optional open market order execution helper provided as template building block for an agent implementation. Remove this function if not needed."
     )]
@@ -156,7 +156,7 @@ impl TemplateAgent {
         })
     }
 
-    #[allow(
+    #[expect(
         dead_code,
         reason = "Optional close market order execution helper provided as template building block for an agent implementation. Remove this function if not needed."
     )]
@@ -175,9 +175,13 @@ impl TemplateAgent {
 
 /// Represents the exact phase the agent is in during the current trading
 /// session.
-#[allow(
+#[expect(
     dead_code,
     reason = "Optional state enum to create an internal state machine. In many cases an `Agent` is a state machine over time `t`. It can simplify the implementation. Remove this enum if not needed."
+)]
+#[expect(
+    clippy::enum_variant_names,
+    reason = "PreTrade/InTrade/PostTrade are the clearest names for this trading-agent state machine; stripping the shared `Trade` postfix would lose meaning"
 )]
 #[derive(Debug, Clone, Copy)]
 enum AgentState {
@@ -193,7 +197,7 @@ impl Default for AgentState {
 }
 /// Data for a trade setup that is currently active, or waiting for a
 /// confirmation to be activated.
-#[allow(
+#[expect(
     dead_code,
     reason = "Optional active trade setup metadata struct provided for signal tracking. Remove this struct if not needed."
 )]
@@ -261,6 +265,10 @@ const fn ohlcv_future_query() -> OhlcvFutureQuery {
 // Stream IDs
 // ================================================================================================
 
+#[expect(
+    clippy::expect_used,
+    reason = "If calling `.to_id()` on `OhlcvFutureQuery` fails, the core `chapaty` crate has a bug that must be reported."
+)]
 fn ohlcv_future_id() -> OhlcvId {
     ohlcv_future_query()
         .to_id()
