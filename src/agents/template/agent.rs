@@ -1,62 +1,70 @@
 //! # Template Agent
 //!
-//! This module is a starting point for building a trading strategy with chapaty.
-//! Every struct, name, and helper here is an example. Keep what fits your strategy,
-//! remove what you do not need, and add new building blocks such as custom indicators,
-//! enums, or helper types whenever the strategy calls for them.
+//! This module is a starting point for building a trading strategy with
+//! chapaty. Every struct, name, and helper here is an example. Keep what fits
+//! your strategy, remove what you do not need, and add new building blocks such
+//! as custom indicators, enums, or helper types whenever the strategy calls for
+//! them.
 //!
-//! For a complete, minimal working strategy, read the demo agent that ships alongside
-//! this template. For advanced, production-grade references, see [chapaty-zoo](https://github.com/LenWilliamson/chapaty-zoo).
+//! For a complete, minimal working strategy, read the demo agent that ships
+//! alongside this template. For advanced, production-grade references, see
+//! [chapaty-zoo](https://github.com/LenWilliamson/chapaty-zoo).
 //!
 //! ## How this template maps to the specification
 //!
-//! The layout of this file follows the layout of the specification, so you can check
-//! the implementation against the specification one section at a time. The section
-//! markers below point at the place where each part of the specification belongs.
+//! The layout of this file follows the layout of the specification, so you can
+//! check the implementation against the specification one section at a time.
+//! The section markers below point at the place where each part of the
+//! specification belongs.
 //!
 //! * Section 2, Environment, belongs in `env()`.
 //! * Section 3, Observation Inputs, belongs in steps 1 to 3 of `act()`.
-//! * Section 4, Entry Logic, belongs in the `AgentState::PreTrade` arm of `act()`.
-//! * Section 5, Exit Logic, belongs in the `AgentState::InTrade` arm of `act()`.
-//! * Section 6, Parameters, belongs in the serialized fields, the `with_*` methods,
-//!   and `TemplateAgentGrid`.
+//! * Section 4, Entry Logic, belongs in the `AgentState::PreTrade` arm of
+//!   `act()`.
+//! * Section 5, Exit Logic, belongs in the `AgentState::InTrade` arm of
+//!   `act()`.
+//! * Section 6, Parameters, belongs in the serialized fields, the `with_*`
+//!   methods, and `TemplateAgentGrid`.
 //!
 //! ## What to serialize
 //!
-//! Serialize only the grid search parameters, which are the values that configure the
-//! agent's behaviour and that you sweep over during a grid search. These are the fields
-//! that show up in the leaderboard. Mark everything else with `#[serde(skip)]`: stream
-//! ids, streaming indicators, trading state, counters, and idempotency timestamps.
+//! Serialize only the grid search parameters, which are the values that
+//! configure the agent's behaviour and that you sweep over during a grid
+//! search. These are the fields that show up in the leaderboard. Mark
+//! everything else with `#[serde(skip)]`: stream ids, streaming indicators,
+//! trading state, counters, and idempotency timestamps.
 //!
 //! ## Every parameter needs a call site
 //!
-//! A parameter is only real once it is used. Each one travels the same path: you declare
-//! it as a serialized field, you set it in a `with_*` method, you sweep it in
-//! `TemplateAgentGrid`, and you read it somewhere in `act()` or in a helper. Both example
-//! parameters below travel that full path. If you add a parameter and never read it, the
-//! grid search will produce many rows that behave identically, which is easy to miss
-//! because the results still look plausible.
+//! A parameter is only real once it is used. Each one travels the same path:
+//! you declare it as a serialized field, you set it in a `with_*` method, you
+//! sweep it in `TemplateAgentGrid`, and you read it somewhere in `act()` or in
+//! a helper. Both example parameters below travel that full path. If you add a
+//! parameter and never read it, the grid search will produce many rows that
+//! behave identically, which is easy to miss because the results still look
+//! plausible.
 //!
 //! ## Streaming indicators
 //!
-//! Store the indicator's configuration as a serialized parameter, not the indicator
-//! itself. For example, store the SMA period as a grid parameter and keep the
-//! `StreamingSma` in a `#[serde(skip)]` field. Serializing the indicator would write a
-//! large amount of internal state you do not need. Rebuild the indicator from its
-//! parameter inside the matching `with_*` method, and reset it in `reset()`.
+//! Store the indicator's configuration as a serialized parameter, not the
+//! indicator itself. For example, store the SMA period as a grid parameter and
+//! keep the `StreamingSma` in a `#[serde(skip)]` field. Serializing the
+//! indicator would write a large amount of internal state you do not need.
+//! Rebuild the indicator from its parameter inside the matching `with_*`
+//! method, and reset it in `reset()`.
 //!
 //! ## Idempotency
 //!
-//! `act()` can be called several times for the same bar. Keep the close timestamp of the
-//! last bar you processed and only advance your indicators and state when a new bar
-//! arrives. Use one timestamp per data stream, so a second OHLCV stream would get its own
-//! `last_processed_ts_2` field.
+//! `act()` can be called several times for the same bar. Keep the close
+//! timestamp of the last bar you processed and only advance your indicators and
+//! state when a new bar arrives. Use one timestamp per data stream, so a second
+//! OHLCV stream would get its own `last_processed_ts_2` field.
 //!
 //! ## The state machine is optional
 //!
-//! Many agents are naturally a state machine over time, so this template drives `act()`
-//! with an `AgentState` enum. If your strategy is simpler, delete the enum and act
-//! directly on the observation.
+//! Many agents are naturally a state machine over time, so this template drives
+//! `act()` with an `AgentState` enum. If your strategy is simpler, delete the
+//! enum and act directly on the observation.
 
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -68,8 +76,8 @@ use serde::Serialize;
 
 /// A template trading agent.
 ///
-/// See the module documentation for the rules on which fields to serialize and why each
-/// group is marked `#[serde(skip)]`.
+/// See the module documentation for the rules on which fields to serialize and
+/// why each group is marked `#[serde(skip)]`.
 #[derive(Debug, Clone, Serialize)]
 pub struct TemplateAgent {
     // Stream ids used to read data in `act()`. Always `#[serde(skip)]`.
@@ -83,11 +91,12 @@ pub struct TemplateAgent {
     // are serialized. Every parameter here is read somewhere in the logic below, and replacing
     // them with the parameters from your specification is the first change to make.
     // ------------------------------------------------------------------------------------------
-    /// How long a trade may stay open before the exit rule closes it. Read in the
-    /// `AgentState::InTrade` arm of `act()`.
+    /// How long a trade may stay open before the exit rule closes it. Read in
+    /// the `AgentState::InTrade` arm of `act()`.
     max_holding_minutes: i64,
 
-    /// How many contracts or units each trade opens with. Read in `open_market()`.
+    /// How many contracts or units each trade opens with. Read in
+    /// `open_market()`.
     position_size: f64,
 
     // Streaming indicators go here. Always `#[serde(skip)]`. Store the indicator's
@@ -116,20 +125,22 @@ impl TemplateAgent {
 
     /// Builds the trading environment for this agent.
     ///
-    /// This example builds the environment from scratch with `chapaty::make`, which
-    /// fetches data from the configured `DataSource`. `DataSource::Hosted` reads
-    /// `CHAPATY_CREDENTIAL` from the environment. If
-    /// you only need a ready-made dataset, use a preset instead with
-    /// `chapaty::load(EnvPreset::..., &io_cfg)`.
+    /// This example builds the environment from scratch with `chapaty::make`,
+    /// which fetches data from the configured `DataSource`.
+    /// `DataSource::Hosted` reads `CHAPATY_CREDENTIAL` from the
+    /// environment. If you only need a ready-made dataset, use a preset
+    /// instead with `chapaty::load(EnvPreset::..., &io_cfg)`.
     ///
-    /// Pick an episode length that is longer than any streaming indicator's warmup. The
-    /// agent resets at every episode boundary, so a short episode can stop an indicator
-    /// from ever warming up. `EpisodeLength::Infinite` never resets during the run and is
+    /// Pick an episode length that is longer than any streaming indicator's
+    /// warmup. The agent resets at every episode boundary, so a short
+    /// episode can stop an indicator from ever warming up.
+    /// `EpisodeLength::Infinite` never resets during the run and is
     /// the safe default.
     ///
-    /// Read the note on `AgentState::PostTrade` in `act()` before you change this value.
-    /// The episode length and the way your state machine leaves `PostTrade` decide how
-    /// often the agent is allowed to trade, and the two settings have to agree.
+    /// Read the note on `AgentState::PostTrade` in `act()` before you change
+    /// this value. The episode length and the way your state machine leaves
+    /// `PostTrade` decide how often the agent is allowed to trade, and the
+    /// two settings have to agree.
     pub async fn env() -> Result<Environment> {
         let source = DataSource::Hosted;
         let ohlcv_query = ohlcv_future_query();
@@ -163,7 +174,8 @@ impl TemplateAgent {
         }
     }
 
-    /// Overrides `max_holding_minutes`. Use this when building a grid of parameters.
+    /// Overrides `max_holding_minutes`. Use this when building a grid of
+    /// parameters.
     pub fn with_max_holding_minutes(self, max_holding_minutes: i64) -> Self {
         Self {
             max_holding_minutes,
@@ -173,8 +185,9 @@ impl TemplateAgent {
 
     /// Overrides `position_size`. Use this when building a grid of parameters.
     ///
-    /// If a parameter configures a streaming indicator, rebuild the indicator here from
-    /// the new value, for example `sma: StreamingSma::new(SmaWindow(period))`.
+    /// If a parameter configures a streaming indicator, rebuild the indicator
+    /// here from the new value, for example `sma:
+    /// StreamingSma::new(SmaWindow(period))`.
     pub fn with_position_size(self, position_size: f64) -> Self {
         Self {
             position_size,
@@ -216,33 +229,38 @@ impl Agent for TemplateAgent {
             return Ok(Actions::no_op());
         };
 
-        // If you need the live market price for a calculation or an order, read it safely.
-        // Never use `?` or `.unwrap()` here, because the price can be missing when the
-        // market has not printed a tick yet, and that would crash the run.
+        // If you need the live market price for a calculation or an order, read it
+        // safely. Never use `?` or `.unwrap()` here, because the price can be
+        // missing when the market has not printed a tick yet, and that would
+        // crash the run.
         //
-        //     let price = match market_view.try_resolved_close_price(self.ohlcv_future_id.symbol) {
+        //     let price = match
+        // market_view.try_resolved_close_price(self.ohlcv_future_id.symbol) {
         //         Ok(p) => p.0,
         //         Err(_) => return Ok(Actions::no_op()),
         //     };
 
-        // 2. Advance internal state once per new bar (idempotency check). `act()` may run
-        //    several times for the same bar, so only move forward on a new close
+        // 2. Advance internal state once per new bar (idempotency check). `act()` may
+        //    run several times for the same bar, so only move forward on a new close
         //    timestamp. Feed any streaming indicator here, for example
-        //    `self.current_sma = self.sma.update(candle.close.0)`. While an indicator is
-        //    warming up it returns `None`, so return `Actions::no_op()` until it is ready.
+        //    `self.current_sma = self.sma.update(candle.close.0)`. While an indicator
+        //    is warming up it returns `None`, so return `Actions::no_op()` until it is
+        //    ready.
         if self.last_processed_ts != Some(candle.close_timestamp) {
             self.last_processed_ts = Some(candle.close_timestamp);
         }
 
-        // 3. Read the current position. Entry and exit logic branch on whether a trade is
-        //    open, and closing a trade needs its `trade_id`. Your own `self.state` and the
-        //    engine's view of the position can disagree, because the engine closes a trade
-        //    on its stop loss or take profit without telling the state machine. Always
-        //    treat the engine as the source of truth for whether a trade is still open.
+        // 3. Read the current position. Entry and exit logic branch on whether a trade
+        //    is open, and closing a trade needs its `trade_id`. Your own `self.state`
+        //    and the engine's view of the position can disagree, because the engine
+        //    closes a trade on its stop loss or take profit without telling the state
+        //    machine. Always treat the engine as the source of truth for whether a
+        //    trade is still open.
         let active_trade = obs.states.find_active_trade_for_agent(&self.identifier());
         let market_id: MarketId = self.ohlcv_future_id.into();
 
-        // 4. Drive the state machine. Replace the placeholder decisions with your logic.
+        // 4. Drive the state machine. Replace the placeholder decisions with your
+        //    logic.
         let actions = match self.state {
             // ==================================================================================
             // Specification section 4: Entry Logic
@@ -331,11 +349,12 @@ impl Agent for TemplateAgent {
 impl TemplateAgent {
     /// Opens a market order and assigns it the next unique trade id.
     ///
-    /// A market order fills right away, so the trade is active on the next call and
-    /// `find_active_trade_for_agent` finds it. If you switch `entry_price` to
-    /// `Some(price)`, the order starts out pending instead, and that lookup will not find
-    /// it until it fills. The exit arm would then treat the unfilled order as an already
-    /// closed trade. If you use limit orders, also check `find_pending_trade_for_agent`,
+    /// A market order fills right away, so the trade is active on the next call
+    /// and `find_active_trade_for_agent` finds it. If you switch
+    /// `entry_price` to `Some(price)`, the order starts out pending
+    /// instead, and that lookup will not find it until it fills. The exit
+    /// arm would then treat the unfilled order as an already closed trade.
+    /// If you use limit orders, also check `find_pending_trade_for_agent`,
     /// and cancel a pending order with `Action::Cancel` rather than
     /// `Action::MarketClose`.
     fn open_market(&mut self, trade_kind: TradeKind) -> Action {
@@ -351,7 +370,8 @@ impl TemplateAgent {
         })
     }
 
-    /// Closes the given trade at market. `quantity: None` closes the full position.
+    /// Closes the given trade at market. `quantity: None` closes the full
+    /// position.
     fn close_market(&self, trade_id: TradeId) -> Action {
         Action::MarketClose(MarketCloseCmd {
             agent_id: self.identifier(),
@@ -367,8 +387,9 @@ impl TemplateAgent {
 
 /// The phase the agent is in during the current trading session.
 ///
-/// A state can also carry data, the way `InTrade` carries `entry_time`. The real strategy
-/// examples use this to remember pending orders or an active setup between calls.
+/// A state can also carry data, the way `InTrade` carries `entry_time`. The
+/// real strategy examples use this to remember pending orders or an active
+/// setup between calls.
 #[expect(
     clippy::enum_variant_names,
     reason = "PreTrade, InTrade, and PostTrade are the clearest names for this state machine; dropping the shared Trade suffix would lose meaning."
@@ -399,7 +420,8 @@ enum EntrySignal {
     Stay,
 }
 
-/// The outcome of evaluating the exit rule for an open trade in the `InTrade` state.
+/// The outcome of evaluating the exit rule for an open trade in the `InTrade`
+/// state.
 #[derive(Debug, Clone, Copy)]
 enum ExitDecision {
     /// Close the open trade now.
@@ -411,8 +433,9 @@ enum ExitDecision {
 // ================================================================================================
 // Grid Search Builder
 //
-// This is the second half of specification section 6. Every parameter you add to the agent
-// needs an axis here, otherwise the grid search always uses its default value.
+// This is the second half of specification section 6. Every parameter you add
+// to the agent needs an axis here, otherwise the grid search always uses its
+// default value.
 // ================================================================================================
 
 pub struct TemplateAgentGrid {
@@ -421,8 +444,8 @@ pub struct TemplateAgentGrid {
 }
 
 impl TemplateAgentGrid {
-    /// A baseline search space. Use `GridAxis` for float ranges and plain iterators for
-    /// integer ranges.
+    /// A baseline search space. Use `GridAxis` for float ranges and plain
+    /// iterators for integer ranges.
     pub fn baseline() -> ChapatyResult<Self> {
         Ok(Self {
             max_holding_minutes_grid: (30_i64..=240).step_by(30).collect(),
@@ -430,8 +453,8 @@ impl TemplateAgentGrid {
         })
     }
 
-    /// Builds every agent in the grid. Assign a unique id with `enumerate` and filter out
-    /// invalid parameter combinations before collecting.
+    /// Builds every agent in the grid. Assign a unique id with `enumerate` and
+    /// filter out invalid parameter combinations before collecting.
     pub fn build(self) -> Vec<(usize, TemplateAgent)> {
         let position_sizes = self.position_size_grid.generate();
 
@@ -455,9 +478,10 @@ impl TemplateAgentGrid {
 
 /// The OHLCV stream this agent trades on.
 ///
-/// This query has no batch indicators. To add one, put it in the `indicators` list, for
-/// example `vec![BatchOhlcvIndicator::Sma(SmaWindow(20))]`. A non-empty `vec!` allocates,
-/// so the function can no longer be `const fn` once you add an indicator.
+/// This query has no batch indicators. To add one, put it in the `indicators`
+/// list, for example `vec![BatchOhlcvIndicator::Sma(SmaWindow(20))]`. A
+/// non-empty `vec!` allocates, so the function can no longer be `const fn` once
+/// you add an indicator.
 const fn ohlcv_future_query() -> OhlcvFutureQuery {
     OhlcvFutureQuery {
         broker: DataBroker::NinjaTrader,
@@ -476,27 +500,29 @@ const fn ohlcv_future_query() -> OhlcvFutureQuery {
 // ================================================================================================
 // Stream IDs
 //
-// Every data stream is referenced by a stream id. There are two ways to get one.
+// Every data stream is referenced by a stream id. There are two ways to get
+// one.
 //
-// 1. From a query. Every query type (OhlcvFutureQuery, OhlcvSpotQuery, TradesSpotQuery,
-//    EconomicCalendarQuery, and so on) implements the `QueryId` trait, which is in the
-//    prelude. Call `.to_id()` on the query to get its stream id. It returns a
-//    `ChapatyResult`, because it validates the broker and exchange combination. You then
-//    use that id to read the stream in `act()`, for example
-//    `obs.market_view.ohlcv().last_event(&ohlcv_id)`.
+// 1. From a query. Every query type (OhlcvFutureQuery, OhlcvSpotQuery,
+//    TradesSpotQuery, EconomicCalendarQuery, and so on) implements the
+//    `QueryId` trait, which is in the prelude. Call `.to_id()` on the query to
+//    get its stream id. It returns a `ChapatyResult`, because it validates the
+//    broker and exchange combination. You then use that id to read the stream
+//    in `act()`, for example `obs.market_view.ohlcv().last_event(&ohlcv_id)`.
 //
 //        let ohlcv_id: OhlcvId = ohlcv_future_query().to_id()?;
 //
-// 2. From a batch indicator. Batch indicators do not have a `.to_id()` helper, so you
-//    build their id by hand. Every batch indicator id has a `parent` field, which is the
-//    OHLCV stream id the indicator was computed from, plus the same config you added to
-//    the query's `indicators` list. The field names are not uniform, so read
-//    `indicator/batch/event.rs` in the chapaty source to confirm them.
+// 2. From a batch indicator. Batch indicators do not have a `.to_id()` helper,
+//    so you build their id by hand. Every batch indicator id has a `parent`
+//    field, which is the OHLCV stream id the indicator was computed from, plus
+//    the same config you added to the query's `indicators` list. The field
+//    names are not uniform, so read `indicator/batch/event.rs` in the chapaty
+//    source to confirm them.
 //
 //        // If the query carried this indicator:
 //        //     indicators: vec![BatchOhlcvIndicator::Sma(SmaWindow(20))]
 //        // then the matching id is:
-//        let sma_id = SmaId { parent: ohlcv_future_id(), length: SmaWindow(20) };
+//        let sma_id = SmaId {parent: ohlcv_future_id(), length: SmaWindow(20)};
 //        // and you read it with:
 //        //     obs.market_view.sma().last_event(&sma_id)
 //
@@ -507,8 +533,8 @@ const fn ohlcv_future_query() -> OhlcvFutureQuery {
 //        //     };
 //        //     indicators: vec![BatchOhlcvIndicator::OvernightRange(cfg)]
 //        // then:
-//        //     let session_id = OhlcvSessionId { parent: ohlcv_future_id(), cfg };
-//        //     obs.market_view.ohlcv_session().last_event(&session_id)
+//        //     let id = OhlcvSessionId { parent: ohlcv_future_id(), cfg };
+//        //     obs.market_view.ohlcv_session().last_event(&id)
 // ================================================================================================
 
 #[expect(
