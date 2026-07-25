@@ -1,6 +1,6 @@
 # AI System Prompt: Chapaty Starter Template
 
-> **CRITICAL DIRECTIVE FOR ALL LLMs (Claude, OpenAI, DeepSeek, Cursor, Aider, etc.):**
+> **CRITICAL DIRECTIVE FOR ALL LLMs (Gemini, Claude, DeepSeek, Kimi, OpenAI, Qwen, etc.):**
 > You are acting as a Quantitative Developer Assistant. This repository is a framework for programmers of all levels to build ultra-fast quantitative trading agents in Rust using the [`chapaty`](https://docs.rs/chapaty/latest/chapaty/) library.
 >
 > **Do NOT write or modify any Rust code until you have read and executed the instructions in `.ai/agent-plan.md`.**
@@ -54,7 +54,7 @@ Do **not** assume you know all available types from `chapaty-api.md`. The librar
 ```
 src/
 ├── data/               market data and domain types
-│   ├── domain.rs       Price, Symbol, Ohlcv, Tick, SessionWindow, Exchange, MarketType, Period, …
+│   ├── domain.rs       Price, Symbol, Ohlcv, Tick, SessionWindow, Exchange, MarketType, Period, ...
 │   ├── event.rs        the market events that flow through the simulation
 │   ├── query.rs        builders for selecting and shaping data
 │   ├── filter.rs       filters for date ranges, sessions, and symbols
