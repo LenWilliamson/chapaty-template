@@ -394,17 +394,14 @@ impl TemplateAgent {
     clippy::enum_variant_names,
     reason = "PreTrade, InTrade, and PostTrade are the clearest names for this state machine; dropping the shared Trade suffix would lose meaning."
 )]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 enum AgentState {
+    #[default]
     PreTrade,
-    InTrade { entry_time: DateTime<Utc> },
+    InTrade {
+        entry_time: DateTime<Utc>,
+    },
     PostTrade,
-}
-
-impl Default for AgentState {
-    fn default() -> Self {
-        Self::PreTrade
-    }
 }
 
 /// The outcome of evaluating the entry condition in the `PreTrade` state.

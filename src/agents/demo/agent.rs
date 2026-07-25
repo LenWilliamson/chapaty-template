@@ -130,7 +130,7 @@ impl Agent for DemoAgent {
         };
 
         // 5b. Determine the Current State
-        let current_dir = active_trade.map(|(_, state)| *state.trade_type());
+        let current_dir = active_trade.map(|(_, state)| state.trade_kind());
 
         // 5c. Bridge the Gap
         if current_dir != desired_dir {
@@ -150,12 +150,12 @@ impl Agent for DemoAgent {
 }
 
 impl DemoAgent {
-    fn open(&mut self, trade_type: TradeKind) -> Action {
+    fn open(&mut self, trade_kind: TradeKind) -> Action {
         self.trade_counter += 1;
         Action::Open(OpenCmd {
             agent_id: self.identifier(),
             trade_id: TradeId(self.trade_counter),
-            trade_type,
+            trade_kind,
             quantity: Quantity(1.0),
             entry_price: None, // Market Order
             stop_loss: None,
