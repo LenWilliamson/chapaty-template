@@ -132,7 +132,7 @@ let m15_id: OhlcvId = m15_query.to_id()?; // use this to read candles in act()
 
 ### 5b. Assembling the `EnvConfig`
 
-`DataSource::Hosted` uses Chapaty's hosted API and reads `CHAPATY_API_KEY` from the environment (put it in `.env` and load it). `DataSource::SelfHosted(endpoint)` points at your own gRPC endpoint.
+`DataSource::Hosted` uses Chapaty's hosted API and reads `CHAPATY_CREDENTIAL` from the environment (put it in `.env` and load it). `DataSource::SelfHosted(endpoint)` points at your own gRPC endpoint.
 
 ```rust
 async fn environment() -> ChapatyResult<Environment> {
@@ -247,15 +247,7 @@ let prev = obs.market_view.previous_timestamp();    // Option<DateTime<Utc>>
 
 `previous_timestamp` returns `None` on the first step of an episode, because there is no previous step yet. This is not only the first step of the whole run. The engine resets it at every episode boundary.
 
-Handle the `None` case before you ask a stream for events since the last step. The visible history is not cleared between episodes, so treating a missing timestamp as an open lower bound would hand you the entire history as if it had just arrived.
-
-```rust
-let Some(prev) = obs.market_view.previous_timestamp() else {
-    return Ok(Actions::no_op()); // First step of the episode, nothing is new yet.
-};
-```
-
-The more robust pattern is to track your own `last_processed_ts` on the agent, which also gives you idempotency when `act` runs more than once for the same bar.
+You do not have to unwrap it. The calls that take a lookback timestamp accept the `Option` directly and treat `None` as an empty window, so nothing is reported as new or as touched on that first step. That matters because the visible history is not cleared between episodes. Treating a missing timestamp as an open lower bound would hand you the whole history as if it had just arrived.
 
 ### 8b. Reading a data stream
 
@@ -288,13 +280,21 @@ if let Some(mut iter) = obs.market_view.ohlcv().rev_iter(&self.m15_id) {
     let previous_candle = iter.nth(1); // The bar before the newest one.
 }
 
-// Only the events that arrived since the last step. Note the guard on prev.
-if let Some(prev) = obs.market_view.previous_timestamp()
-    && let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id, prev)
-{
+// Only the events that arrived since the last step. Pass the Option straight
+// through. On the first step of an episode this yields nothing.
+let prev = obs.market_view.previous_timestamp(); // Option<DateTime<Utc>>
+if let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id, prev) {
     for candle in new_events { /* React to each new bar. */ }
 }
+
+// Your own idempotency field is also an Option<DateTime<Utc>>, so it fits the
+// same call without any unwrapping.
+if let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id, self.last_processed_ts) {
+    for candle in new_events { /* React to each bar you have not seen. */ }
+}
 ```
+
+`new_events_since` returns `None` when the stream has no data and also when the timestamp you passed is `None`. In both cases there is nothing new to process, so a single `if let` covers both.
 
 `rev_iter` and `new_events_since` both run newest to oldest and stop as soon as they pass your cutoff, so prefer them over scanning the whole slice.
 
@@ -318,8 +318,8 @@ let price = obs.market_view.try_resolved_close_price(self.symbol); // ChapatyRes
 
 // Did any stream touch this price between the previous step and now? This checks
 // every price-capable stream, not just one, so a fast stream can register a touch
-// that a slow stream would have missed. On the first step of an episode the whole
-// visible history counts as the window.
+// that a slow stream would have missed. On the first step of an episode there is
+// no window yet, so this returns false.
 let touched = obs.market_view.reached_price(price, self.symbol, TradeKind::Long); // bool
 
 // The bar that was open at a given timestamp, meaning open <= ts < close.
@@ -427,28 +427,130 @@ Use `exit_reason()` when you want to react to how the last trade ended, for exam
 
 ## 9. Emitting Actions
 
-Return actions from `act()` in the `Actions` container. Pair a command, wrapped in `Action`, with the target `MarketId`. Get the `MarketId` from an `OhlcvId` with `.into()`.
+`act()` returns an `Actions` batch. A batch maps each target market to the commands you want to run there. You build a command, wrap it in an `Action`, and pair it with a `MarketId`.
+
+`MarketId` holds the broker, the exchange, and the symbol. It does not hold the period, so every OHLCV stream id for the same symbol converts to the same `MarketId`. In a multi timeframe agent it does not matter which stream id you convert from.
 
 ```rust
-// 1. Do nothing
+let market_id: MarketId = self.m15_id.into();   // same result as self.h4_id.into()
+```
+
+### 9a. Building the batch
+
+```rust
+// Do nothing this step.
 return Ok(Actions::no_op());
 
-// 2. Open an order
+// One command.
 self.trade_counter += 1;
 let cmd = OpenCmd {
     agent_id: self.identifier(),
     trade_id: TradeId(self.trade_counter),
     trade_kind: TradeKind::Long,       // or TradeKind::Short
     quantity: Quantity(1.0),
-    entry_price: None,                 // None = market order; Some(Price(x)) = limit
+    entry_price: None,                 // None is a market order, Some(Price(x)) is a limit order
     stop_loss: Some(Price(stop)),
     take_profit: Some(Price(target)),
 };
-let market_id: MarketId = self.m15_id.into();
 return Ok(Actions::from((market_id, Action::Open(cmd))));
 ```
 
-Other variants: `Action::Modify(ModifyCmd { new_entry_price, new_stop_loss, new_take_profit, ... })`, `Action::MarketClose(MarketCloseCmd { quantity: None, ... })` (`None` closes the full size), `Action::Cancel(CancelCmd { ... })`.
+Four more ways to build the same thing, so pick whichever reads best:
+
+```rust
+// Build it up step by step.
+let mut actions = Actions::new();          // same as Actions::no_op()
+actions.add(market_id, first_action);
+actions.add(market_id, second_action);
+
+// Chain it.
+let actions = Actions::new()
+    .with_action(market_id, first_action)
+    .with_action(market_id, second_action);
+
+// From a vector, which suits a pair of bracket orders.
+let actions = Actions::from(vec![
+    (market_id, Action::Open(long_cmd)),
+    (market_id, Action::Open(short_cmd)),
+]);
+
+// From any iterator.
+let actions: Actions = candidates
+    .into_iter()
+    .map(|cmd| (market_id, Action::Open(cmd)))
+    .collect();
+```
+
+`any_open_action(&market_id)` tells you whether a batch already contains an open command for a market. This is useful when one agent wraps others and has to resolve conflicting signals.
+
+### 9b. Ordering inside one step
+
+You can put several commands for the same market in one batch. The engine sorts them before running them, in this order:
+
+1. `Cancel`, so pending commitments are removed first.
+2. `MarketClose`, so open risk is closed and margin is freed.
+3. `Modify`, so existing trades are adjusted.
+4. `Open`, so new positions use whatever was just freed.
+
+This means a reversal works in a single step. Close the current position and open the opposite one in the same batch, and the close is guaranteed to run first.
+
+```rust
+let mut actions = Actions::new();
+if let Some((_, trade)) = obs.states.find_active_trade_for_agent(&self.identifier()) {
+    actions.add(market_id, self.close_market(trade.trade_id()));
+}
+actions.add(market_id, self.open_market(TradeKind::Short));
+return Ok(actions); // The close always runs before the open.
+```
+
+### 9c. The four commands
+
+Each command targets a trade by `trade_id`, and each one only works on a trade in the right stage. Sending a command to a trade in the wrong stage is an invalid action, which costs you the penalty rather than failing to compile.
+
+| Command          | Works on          | Notes                                                                                                                                                                              |
+| ---------------- | ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OpenCmd`        | Creates a trade   | `entry_price: None` fills at market now and the trade becomes active. `Some(price)` creates a pending limit order.                                                                 |
+| `CancelCmd`      | Pending only      | Use this to drop an order that has not filled.                                                                                                                                     |
+| `MarketCloseCmd` | Active only       | `quantity: None` closes the full size. `Some(qty)` closes part of it and leaves the rest active.                                                                                   |
+| `ModifyCmd`      | Pending or active | On a pending order you can change entry price, stop loss, and take profit. On an active trade you can only change stop loss and take profit, and changing entry price is an error. |
+
+```rust
+// Cancel an order that has not filled yet.
+Action::Cancel(CancelCmd {
+    agent_id: self.identifier(),
+    trade_id,
+})
+
+// Close an open position. Use None for the full size.
+Action::MarketClose(MarketCloseCmd {
+    agent_id: self.identifier(),
+    trade_id,
+    quantity: None,
+})
+
+// Move the stop loss and take profit.
+Action::Modify(ModifyCmd {
+    agent_id: self.identifier(),
+    trade_id,
+    new_entry_price: None,          // only allowed while the order is pending
+    new_stop_loss: Some(Price(new_stop)),
+    new_take_profit: Some(Price(new_target)),
+})
+```
+
+Because Cancel and MarketClose apply to different stages, pair them with the matching lookup from section 8d. Use `find_pending_trade_for_agent` before you cancel, and `find_active_trade_for_agent` before you close.
+
+An `Action` also answers a few questions without matching on the variant, which helps when one agent composes others: `kind()`, `trade_id()`, `agent_id()`, and `is_open()`.
+
+### 9d. What the engine rejects
+
+Commands are validated before they run. A rejected command is recorded as an invalid action and costs the penalty set by `with_invalid_action_penalty`. The rules worth remembering:
+
+- **Quantity must be positive.** This applies to `OpenCmd` and to a partial `MarketCloseCmd`.
+- **Prices must be ordered.** For a long trade the order is stop loss, then entry, then take profit, from low to high. For a short trade it is reversed, so take profit, then entry, then stop loss. Any field you leave as `None` is skipped, so partial combinations are fine as long as the ones you do provide are ordered correctly.
+- **Stop loss and take profit cannot be equal** in a `ModifyCmd`.
+- **A trade id must be unique among live trades.** Opening with an id that is already pending or active is rejected, which is why the agent increments a counter before every open and resets it in `reset()`.
+- **A market order needs a price.** If the symbol has not produced its first tick yet, the open fails. See section 4 for the safe pattern.
 
 ## 10. Running & Evaluating
 
