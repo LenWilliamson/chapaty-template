@@ -12,8 +12,8 @@
 
 ## 6. Parameters
 
-| Field   |  Type  | Default | Description               | Grid Search Range                         |
-| ------- | :----: | :-----: | ------------------------- | ----------------------------------------- |
-| `field` | `type` |   `X`   | Description of the field. | `{x_0, x_0 + step, x_1 + step, ..., max}` |
+| Field   |  Type  | Default | Description               | Grid Search Range                           |
+| ------- | :----: | :-----: | ------------------------- | ------------------------------------------- |
+| `field` | `type` |   `X`   | Description of the field. | `{x_0, x_0 + step, x_0 + 2*step, ..., x_n}` |
 
 ## 7. Assumptions / Out of Scope
