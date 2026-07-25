@@ -241,11 +241,21 @@ The engine never shows you data from the future. Every slice, iterator, and pric
 ### 8a. Time
 
 ```rust
-let now = obs.market_view.current_timestamp();    // DateTime<Utc>
-let prev = obs.market_view.previous_timestamp();  // DateTime<Utc>
+let now = obs.market_view.current_timestamp();      // DateTime<Utc>
+let prev = obs.market_view.previous_timestamp();    // Option<DateTime<Utc>>
 ```
 
-On the very first step of an episode there is no previous step, so `previous_timestamp()` returns `DateTime::<Utc>::MIN_UTC`. Any call that compares against it, such as `new_events_since`, therefore returns the full history on that first step rather than nothing.
+`previous_timestamp` returns `None` on the first step of an episode, because there is no previous step yet. This is not only the first step of the whole run. The engine resets it at every episode boundary.
+
+Handle the `None` case before you ask a stream for events since the last step. The visible history is not cleared between episodes, so treating a missing timestamp as an open lower bound would hand you the entire history as if it had just arrived.
+
+```rust
+let Some(prev) = obs.market_view.previous_timestamp() else {
+    return Ok(Actions::no_op()); // First step of the episode, nothing is new yet.
+};
+```
+
+The more robust pattern is to track your own `last_processed_ts` on the agent, which also gives you idempotency when `act` runs more than once for the same bar.
 
 ### 8b. Reading a data stream
 
@@ -278,8 +288,10 @@ if let Some(mut iter) = obs.market_view.ohlcv().rev_iter(&self.m15_id) {
     let previous_candle = iter.nth(1); // The bar before the newest one.
 }
 
-// Only the events that arrived since the last step.
-if let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id, prev) {
+// Only the events that arrived since the last step. Note the guard on prev.
+if let Some(prev) = obs.market_view.previous_timestamp()
+    && let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id, prev)
+{
     for candle in new_events { /* React to each new bar. */ }
 }
 ```
@@ -306,7 +318,8 @@ let price = obs.market_view.try_resolved_close_price(self.symbol); // ChapatyRes
 
 // Did any stream touch this price between the previous step and now? This checks
 // every price-capable stream, not just one, so a fast stream can register a touch
-// that a slow stream would have missed.
+// that a slow stream would have missed. On the first step of an episode the whole
+// visible history counts as the window.
 let touched = obs.market_view.reached_price(price, self.symbol, TradeKind::Long); // bool
 
 // The bar that was open at a given timestamp, meaning open <= ts < close.
@@ -316,7 +329,7 @@ let candle: Option<Ohlcv> = obs.market_view.find_candle(&self.m15_id, some_ts);
 let markets: Arc<[MarketId]> = obs.market_view.market_ids();
 ```
 
-`try_resolved_close_price` is the safe way to ask "what is this worth right now". It looks at every stream that can produce a close price, keeps the one with the newest timestamp, and never reads past the current step. It returns an error when no stream has data for that symbol yet, which happens before an asset's first tick.
+`try_resolved_close_price` is the safe way to ask what a symbol is worth right now. It looks at every stream that can produce a close price, keeps the one with the newest timestamp, and never reads past the current step. It returns an error when no stream has data for that symbol yet, which happens before an asset's first tick.
 
 ### 8d. Portfolio state (`obs.states`)
 
@@ -329,7 +342,17 @@ if let Some((market_id, trade)) = obs.states.find_active_trade_for_agent(&self.a
     let id = trade.trade_id();
 }
 
-// Iterating.
+// Orders that have not filled yet.
+let waiting = obs.states.any_pending_trade_for_agent(&self.agent_id);         // bool
+let first_pending = obs.states.find_pending_trade_for_agent(&self.agent_id);  // Option<(MarketId, &State)>
+
+// Every live trade of this agent, pending and active. Use this when one check is
+// not enough, for example to cancel the sibling of a filled bracket order.
+for (market_id, trade) in obs.states.live_trades_for_agent(&self.agent_id) {
+    if trade.is_pending() { /* still waiting to fill */ }
+}
+
+// Iterating everything.
 for trade in obs.states.iter_live() { /* pending and active */ }
 for (market_id, trade) in obs.states.iter_live_with_market() { /* same, with market */ }
 for trade in obs.states.iter_archive() { /* closed and canceled */ }
@@ -345,7 +368,7 @@ let pnl = obs.states.pnl();                            // f64, realized plus unr
 let markets = obs.states.markets();                    // iterator over MarketId
 ```
 
-**Important:** `any_active_trade_for_agent` and `find_active_trade_for_agent` match **active** trades only. A limit order that has not filled yet is **pending**, not active, so both calls ignore it. If your strategy places pending orders, track their ids in your own state, or use `iter_live()` and check `is_pending()` yourself. A bracket strategy that places two limit orders and cancels the loser depends on exactly this distinction.
+**Important:** a limit order that has not filled yet is **pending**, not active. `any_active_trade_for_agent` and `find_active_trade_for_agent` ignore pending orders on purpose, so a strategy that only calls those will think it is flat while its orders are still working. Use the pending helpers, or `live_trades_for_agent` when you need to see both kinds at once.
 
 `get_by_id` searches live trades only. It returns `None` once a trade has closed or been canceled.
 
@@ -353,7 +376,7 @@ let markets = obs.states.markets();                    // iterator over MarketId
 
 ### 8e. Reading one trade (`State`)
 
-`States` hands you a `&State`. It covers all four lifecycle stages, so several accessors return `Option` and give you `None` when the stage does not have that information.
+`States` hands you a `&State`. It covers all four lifecycle stages, so several accessors return `Option` and give you `None` when the stage does not carry that information.
 
 ```rust
 // Identity.
@@ -376,8 +399,9 @@ trade.is_pending(); trade.is_active(); trade.is_closed(); trade.is_canceled();
 let pnl: Option<f64> = trade.pnl_usd();
 let pnl_ticks: Option<Tick> = trade.pnl_ticks(symbol);
 
-// Planned risk from the stop loss and take profit. These need the symbol
-// because ticks and USD depend on the contract.
+// Planned risk from the stop loss and take profit. These need the symbol,
+// because ticks and USD depend on the contract. Use them instead of writing
+// your own risk math.
 let risk_ticks: Option<Tick> = trade.expected_loss_in_ticks(symbol);
 let reward_ticks: Option<Tick> = trade.expected_profit_in_ticks(symbol);
 let risk_usd: Option<f64> = trade.expected_loss_in_usd(symbol);
