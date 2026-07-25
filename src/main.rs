@@ -25,9 +25,9 @@ static GRID_SEARCH_LIMIT: LazyLock<usize> = LazyLock::new(|| {
 /// Local root directory for all generated reports.
 static RESULTS_LOCAL_DIR: &str = "chapaty/reports";
 
-/// Cloud bucket for all generated reports.
-static RESULTS_CLOUD_BUCKET: LazyLock<Option<String>> =
-    LazyLock::new(|| std::env::var("RESULTS_CLOUD_BUCKET").ok());
+/// Cloud uri for all generated reports.
+static RESULTS_CLOUD_URI: LazyLock<Option<String>> =
+    LazyLock::new(|| std::env::var("RESULTS_CLOUD_URI").ok());
 
 /// Which agent to run.
 static ACTIVE_AGENT: LazyLock<ActiveAgent> = LazyLock::new(|| {
@@ -101,8 +101,7 @@ async fn run() -> Result<()> {
 ///
 /// # Performance
 ///
-/// Before launching a large grid, benchmark a single agent with
-/// [`Environment::evaluate_agent`] and estimate total time as:
+/// The estimated total runtime of a gridsearch is:
 /// `(single_agent_time * grid.len()) / cpu_cores`.
 async fn backtest<T>(env: &mut Environment, mut baseline: T, grid: Vec<(usize, T)>) -> Result<()>
 where
@@ -136,15 +135,15 @@ fn subset<T>(mut agents: Vec<(usize, T)>) -> Vec<(usize, T)> {
     agents
 }
 
-/// Writes `report` to the cloud bucket if `RESULTS_CLOUD_BUCKET` is set,
+/// Writes `report` to the cloud bucket if `RESULTS_CLOUD_URI` is set,
 /// otherwise to local disk.
 async fn save_report<R>(report: &R) -> Result<()>
 where
     R: Report + ReportName + ToSchema + Sync + Send,
 {
     let agent = ACTIVE_AGENT.as_ref();
-    if let Some(bucket) = RESULTS_CLOUD_BUCKET.as_deref() {
-        let dest = uri(bucket, &format!("{agent}/{}.csv", report.base_name()));
+    if let Some(prefix) = RESULTS_CLOUD_URI.as_deref() {
+        let dest = join(prefix, &format!("{agent}/{}.csv", report.base_name()));
         report.to_cloud(&CloudConfig::new(dest)).await?;
     } else {
         let reports_dir = Path::new(RESULTS_LOCAL_DIR).join(agent);
@@ -153,7 +152,7 @@ where
     Ok(())
 }
 
-fn uri(results_dir: &str, file_name: &str) -> String {
-    let dir = results_dir.trim_end_matches('/');
-    format!("{dir}/{file_name}")
+fn join(prefix: &str, file_name: &str) -> String {
+    let p = prefix.trim_end_matches('/');
+    format!("{p}/{file_name}")
 }

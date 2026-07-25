@@ -1,10 +1,10 @@
 """
 Generate a QuantStats HTML tearsheet from a Chapaty Equity Curve.
 
-Mirrors `src/main.rs`'s `save_report`: if `RESULTS_CLOUD_BUCKET` is set (a
+Mirrors `src/main.rs`'s `save_report`: if `RESULTS_CLOUD_URI` is set (a
 "gs://bucket/prefix" URI), the equity curve is read from
-`{RESULTS_CLOUD_BUCKET}/{agent}/equity_curve.csv` and the finished tearsheet
-is uploaded back to `{RESULTS_CLOUD_BUCKET}/{agent}/tearsheet.html`. Otherwise
+`{RESULTS_CLOUD_URI}/{agent}/equity_curve.csv` and the finished tearsheet
+is uploaded back to `{RESULTS_CLOUD_URI}/{agent}/tearsheet.html`. Otherwise
 both read and write stay local: `chapaty/reports/<agent>/equity_curve.parquet`
 (falling back to the `.csv`) and `chapaty/reports/<agent>/tearsheet.html`.
 The agent subdirectory is passed as the first CLI argument (e.g.
@@ -86,7 +86,7 @@ def load_equity_curve_cloud(
     if not blob.exists():
         print(
             f"[tearsheet] ERROR: no equity curve found at gs://{blob.bucket.name}/{blob.name}. "
-            f"Did the backtest run with RESULTS_CLOUD_BUCKET set?",
+            f"Did the backtest run with RESULTS_CLOUD_URI set?",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -165,7 +165,7 @@ def main() -> int:
     reports_dir = REPORTS_ROOT / args.agent
     output_path = reports_dir / "tearsheet.html"
 
-    bucket_uri = os.environ.get("RESULTS_CLOUD_BUCKET")
+    bucket_uri = os.environ.get("RESULTS_CLOUD_URI")
     client = Client() if bucket_uri else None
 
     if bucket_uri:
@@ -208,7 +208,7 @@ def main() -> int:
     print(f"[tearsheet] Wrote {output_path}")
 
     if bucket_uri:
-        upload_tearsheet_cloud(output_path, bucket_uri, args.agent, client)
+        upload_tearsheet_cloud(client, output_path, bucket_uri, args.agent)
 
     return 0
 
