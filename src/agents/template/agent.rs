@@ -126,8 +126,7 @@ impl Agent for TemplateAgent {
             self.last_processed_ts = Some(candle.close_timestamp);
         }
 
-        // 3. Implement Entry Logic / Trade Management / Exit Logic w.r.t to the current
-        //    state
+        // 3. Entry Logic / Trade Management / Exit Logic for the current state
         let actions = match self.state {
             AgentState::PreTrade { .. } => Actions::no_op(),
             AgentState::InTrade { .. } => Actions::no_op(),
@@ -140,6 +139,10 @@ impl Agent for TemplateAgent {
 }
 
 impl TemplateAgent {
+    #[allow(
+        dead_code,
+        reason = "Optional open market order execution helper provided as template building block for an agent implementation. Remove this function if not needed."
+    )]
     fn open_market(&mut self, trade_type: TradeKind) -> Action {
         self.trade_counter += 1;
         Action::Open(OpenCmd {
@@ -153,6 +156,10 @@ impl TemplateAgent {
         })
     }
 
+    #[allow(
+        dead_code,
+        reason = "Optional close market order execution helper provided as template building block for an agent implementation. Remove this function if not needed."
+    )]
     fn close_market(&self, trade_id: TradeId) -> Action {
         Action::MarketClose(MarketCloseCmd {
             agent_id: self.identifier(),
@@ -168,6 +175,10 @@ impl TemplateAgent {
 
 /// Represents the exact phase the agent is in during the current trading
 /// session.
+#[allow(
+    dead_code,
+    reason = "Optional state enum to create an internal state machine. In many cases an `Agent` is a state machine over time `t`. It can simplify the implementation. Remove this enum if not needed."
+)]
 #[derive(Debug, Clone, Copy)]
 enum AgentState {
     PreTrade { active_setup: Option<ActiveSetup> },
@@ -182,6 +193,10 @@ impl Default for AgentState {
 }
 /// Data for a trade setup that is currently active, or waiting for a
 /// confirmation to be activated.
+#[allow(
+    dead_code,
+    reason = "Optional active trade setup metadata struct provided for signal tracking. Remove this struct if not needed."
+)]
 #[derive(Debug, Copy, Clone)]
 struct ActiveSetup {
     direction: TradeKind,
