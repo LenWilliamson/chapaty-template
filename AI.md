@@ -10,17 +10,14 @@
 You must read the following files to understand your constraints before assisting the user:
 
 1. **`.ai/agent-plan.md`**: **The Spec-First Protocol.** This dictates your step-by-step workflow. You are forbidden from writing code before the user approves a formal specification.
-2. **`.ai/chapaty-api.md`**: **The Engine API.** An **80/20 starter guide — not exhaustive**. Read it first, but never assume it covers everything you need. Never hallucinate types, traits, or methods.
+2. **`.ai/chapaty-api.md`**: **The Chapaty API.** An **80/20 starter guide, that is not exhaustive**. Read it first, but never assume it covers everything you need. Never hallucinate types, traits, or methods.
 3. **`.ai/rust-vibe-rules.md`**: **The Coding Style.** Rules for writing Rust for beginners (e.g., avoid lifetimes, prefer `.clone()`, use `ChapatyResult`, handle `obs.market_view.try_resolved_close_price(symbol)` gracefully).
-4. **`.ai/algorithm-ideas.md`**: **Inspiration & Examples.** Reference this if the user asks for seed agents, or if you are stuck and need the raw GitHub URLs to fetch/read official reference implementations to understand complex state management.
-
-> **`.ai/update-prompts.md` is NOT part of the normal workflow.** It is a maintenance tool the repository owner runs manually after a chapaty version upgrade to decide if these docs need updating. If you see it in context, ignore it. Do not execute it, do not update any `.ai/` files proactively, and do not treat it as an instruction for the current session.
 
 ## 1a. CRITICAL: Always Read the Actual chapaty Source Before Implementing
 
-**`chapaty-api.md` is a starter guide, not a complete reference.** Before implementing any type you are not 100% certain of, read the actual library source. Skipping this step leads to three documented failure modes:
+**`chapaty-api.md` is a starter guide, not a complete reference.** Before implementing any type you are not 100% certain of, read the actual library source. Skipping this step leads to documented failure modes, including but not limited to:
 
-- Building manual workarounds (ring buffers, manual FVG detection) for things the library already provides.
+- Building manual workarounds (ring buffers, manual FVG detection) for features the library already provides.
 - Calling methods that don't exist, or missing methods that do.
 - Using an outdated version's API because the registry grep hit the wrong directory.
 
@@ -44,14 +41,11 @@ CHAPATY_VER=$(grep -E '^chapaty\s*=' Cargo.toml | grep -oE '[0-9]+\.[0-9]+\.[0-9
 find ~/.cargo/registry/src -path "*/chapaty-$CHAPATY_VER/src" -type d
 ```
 
-`~/.cargo/registry/src/` contains ALL downloaded versions side by side — always filter to the resolved version or you will silently hit the wrong one.
+`~/.cargo/registry/src/` contains ALL downloaded versions side by side. Always filter to the resolved version or you will silently hit the wrong one.
 
-**API / SaaS context (no shell):**
-Read `Cargo.toml` with your file-read tool to extract the version. Then use:
+**API / SaaS context (no shell):** Read `Cargo.toml` with your file-read tool to extract the version. Then use `https://docs.rs/chapaty/latest/chapaty/` as a public API reference.
 
-- `https://docs.rs/chapaty/latest/chapaty/` — public API reference
-
-**If you have neither shell nor file/web access:** do NOT guess. Say explicitly: _"I cannot verify this API — here is my reading of the spec; please confirm before I continue."_
+**If you have neither shell nor file/web access:** do NOT guess. Say explicitly: _"I cannot verify this API. Here is my reading of the spec. Please confirm before I continue."_
 
 ### Step 2 — Explore the source structure, then read what you need
 
@@ -59,23 +53,48 @@ Do **not** assume you know all available types from `chapaty-api.md`. The librar
 
 ```
 src/
-├── data/           domain types (Price, Ohlcv, Symbol, …), event types, query builders
-├── gym/            Agent trait, Observation, Actions, Environment, trading state machine
+├── data/               market data and domain types
+│   ├── domain.rs       Price, Symbol, Ohlcv, Tick, SessionWindow, Exchange, MarketType, Period, …
+│   ├── event.rs        the market events that flow through the simulation
+│   ├── query.rs        builders for selecting and shaping data
+│   ├── filter.rs       filters for date ranges, sessions, and symbols
+│   ├── view.rs         read-only views over the loaded dataset
+│   ├── episode.rs      episode boundaries used by the gym loop
+│   └── common.rs       small shared helpers for the data layer
+├── gym/                the trading environment and the agent API
+│   └── trading/        Agent trait, Observation, Actions, Environment, config,
+│                       ledger, action space, and the trading state machine
 ├── indicator/
-│   ├── batch/      pre-computed indicators (Sma, Ema, Atr, Roc, Rsi, Vwap, OvernightRange)
-│   │               configured in env(), O(1) access in act(), stateless
-│   └── streaming/  incremental indicators (StreamingHhll, StreamingFairValueGap, StreamingSma, …)
-│                   stored in the agent struct, updated on every tick, stateful
-├── math/           accumulators, market profile (Volume Profile, TPO)
-├── report/         journal, leaderboard, equity curve — read-only outputs
-└── sim/            internal simulation engine — rarely needed directly
+│   ├── config.rs       window and smoothing settings (SmaWindow, EmaWindow, RsiWindow, AtrConfig, LookbackWindow)
+│   ├── batch/          pre-computed indicators. Configured in env(), O(1) access in act(), stateless.
+│   │   ├── ohlcv.rs    on candles: Sma, Ema, Rsi, Atr, RateOfChange, Vwap, OvernightRange
+│   │   ├── trades.rs   on raw trades: Vwap, OvernightRange
+│   │   └── event.rs    event-driven batch indicators
+│   └── streaming/      incremental indicators. Stored in the agent struct, updated every tick, stateful.
+│       ├── traits.rs           the StreamingIndicator trait every indicator implements
+│       ├── moving_averages.rs  StreamingSma, StreamingEma
+│       ├── oscillators.rs      StreamingRsi
+│       ├── momentum.rs         StreamingRateOfChange
+│       ├── volatility.rs       StreamingAtr, StreamingOhlcvVwap, StreamingTradesVwap
+│       ├── swing.rs            StreamingHhll (higher highs / lower lows)
+│       ├── fair_value_gap.rs   StreamingFairValueGap
+│       ├── session.rs          StreamingOvernightRange
+│       └── timing.rs           StreamingTdSequential, StreamingTdXSequential
+├── report/             read-only outputs: journal, leaderboard, equity curve,
+│                       cumulative returns, portfolio performance, trade statistics
+├── math/               accumulators and market profile (Volume Profile, TPO). Internal.
+├── sim/                internal simulation engine. Rarely needed directly.
+├── error.rs            ChapatyError and ChapatyResult
+├── prelude.rs          the single glob import that brings in the common public API
+├── ring_buffer.rs      fixed-size rolling buffer for writing your own streaming logic
+└── sorted_vec_map.rs   ordered map helper used across the library
 ```
 
-**Key orientation rule:** if a strategy concept is stateless (SMA, ATR, ROC), check `indicator/batch/` first — a batch variant likely exists and is preferable. If it's stateful or sequential (FVG, HHLL, custom logic), use `indicator/streaming/`.
+**Key orientation rule:** if a strategy concept is stateless (SMA, ATR, ROC), check `indicator/batch/` first. A batch variant likely exists and is preferable. If it is stateful or sequential (FVG, HHLL, custom logic), use `indicator/streaming/`.
 
 **Local:** `ls <CHAPATY_SRC>/indicator/streaming/` and `ls <CHAPATY_SRC>/indicator/batch/` to see the exact files currently in the library.
 
-**API:** browse `https://docs.rs/chapaty/latest/chapaty/` — the module index lists every public type. Use it like IDE autocomplete before writing any type name.
+**API:** browse `https://docs.rs/chapaty/latest/chapaty/`. The module index lists every public type. Use it like IDE autocomplete before writing any type name.
 
 ### Step 3 — Grid Builder helper check (required before generating `*AgentGrid`)
 

@@ -108,8 +108,8 @@ Once approved, build the strategy using the modern Rust (non-`mod.rs`) directory
    ActiveAgent::<Name> => run_workflow(
        &mut env,
        &file_cfg,
-       <Name>Agent::new(ohlcv, /* baseline params */),
-       <Name>AgentGrid::baseline(ohlcv)?.build(),
+       <Name>Agent::new(),
+       <Name>AgentGrid::baseline()?.build(),
    ),
    ```
 
@@ -124,7 +124,7 @@ Once approved, build the strategy using the modern Rust (non-`mod.rs`) directory
    **Required guarantees (same as before):**
    - **Single Agent Evaluation:** `run_workflow` always runs the baseline first and writes the journal, cumulative returns, portfolio performance, trade stats, and EOD equity curve. This guarantees the Python visualization script succeeds.
    - **Grid Search Execution:** The grid builder returns `Vec<(usize, Agent)>` with UIDs assigned via `.enumerate()`, passed directly to `env.evaluate_agents()` for `rayon` parallelization.
-   - **Runtime Estimation:** Before launching massive grid searches (e.g., 1M+ agents), benchmark the baseline and estimate total wait time as `(single_agent_time × grid.len()) / cpu_cores`.
+   - **Runtime Estimation:** Before launching massive grid searches (e.g., 1M+ agents), benchmark the baseline and estimate total wait time as `(single_agent_time * grid.len()) / cpu_cores`.
 
 ## Phase 5: Handoff
 
@@ -138,7 +138,7 @@ _Note for LLM: If `make run` throws a Python error because `journal.csv` is miss
 
 ## Hard Engine Rules & Constraints
 
-1. **Never invent `chapaty` types.** If `.ai/chapaty-api.md` doesn't cover what you need, read the source directly from `~/.cargo/registry/src/chapaty-<VERSION>/src/` (resolve the version first via `cargo metadata` — see `AI.md § 1a`). Only ask the user if the source is unavailable.
+1. **Never invent `chapaty` types.** If `.ai/chapaty-api.md` doesn't cover what you need, read the source directly from `~/.cargo/registry/src/chapaty-<VERSION>/src/` (resolve the version first via `cargo metadata`). Only ask the user if the source is unavailable.
 
    **Source resolution order (must follow):**
    1. If local IDE/CLI access exists: inspect local Cargo registry first (`~/.cargo/registry/.../chapaty-*`) and current workspace files.
