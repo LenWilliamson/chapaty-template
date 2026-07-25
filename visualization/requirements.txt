@@ -1,2 +1,4 @@
-pandas>=3.0.2
+google-cloud-storage>=3.13
+pandas>=3.0.5
+python-dotenv>=1.2.2
 quantstats>=0.0.81

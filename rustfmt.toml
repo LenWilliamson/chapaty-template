@@ -1,0 +1,22 @@
+# ==========================================================
+# Requires: rustup component add rustfmt --toolchain nightly
+#           cargo +nightly fmt
+# ==========================================================
+
+edition = "2024"
+
+use_small_heuristics = "Default"
+
+# === import handling ===
+# Merge multiple `use` items from the same crate into one nested statement
+imports_granularity = "Crate"
+# Separate imports into std / external crate / local crate blocks
+group_imports = "StdExternalCrate"
+
+# === comments & docs ===
+# Wrap long comments/doc comments to max_width
+wrap_comments = true
+# Width budget for fenced code blocks inside doc comments
+doc_comment_code_block_width = 100
+# Format macro bodies that look like ordinary Rust code
+format_macro_bodies = true
