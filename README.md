@@ -93,7 +93,7 @@ If you need to pin your repository to a historical version, you can check out a 
 
 | Template Tag | Core `chapaty` Version | Notes         |
 | ------------ | ---------------------- | ------------- |
-| `v1.3.3+x`   | `1.3.3`                | Active Stable |
+| `v1.3.4+x`   | `1.3.4`                | Active Stable |
 | `v1.3.1+x`   | `1.3.1`                | Legacy        |
 | `v1.3.0+x`   | `1.3.0`                | Legacy        |
 | `v1.2.1+x`   | `1.2.1`                | Legacy        |
