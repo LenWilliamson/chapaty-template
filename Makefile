@@ -60,7 +60,6 @@ update:
 	curl -fsSL $(TEMPLATE_REPO)/.ai/agent-plan.md          -o .ai/agent-plan.md
 	curl -fsSL $(TEMPLATE_REPO)/.ai/chapaty-api.md         -o .ai/chapaty-api.md
 	curl -fsSL $(TEMPLATE_REPO)/.ai/rust-vibe-rules.md     -o .ai/rust-vibe-rules.md
-	curl -fsSL $(TEMPLATE_REPO)/.ai/algorithm-ideas.md     -o .ai/algorithm-ideas.md
 	@echo ">> [2/4] Syncing visualization script..."
 	curl -fsSL $(TEMPLATE_REPO)/visualization/generate_tearsheet.py -o visualization/generate_tearsheet.py
 	curl -fsSL $(TEMPLATE_REPO)/visualization/requirements.txt      -o visualization/requirements.txt
