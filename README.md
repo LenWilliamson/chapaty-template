@@ -81,7 +81,7 @@ make update
 
 This synchronizes `AI.md`, the entire `.ai/` directory, and the `visualization/` directory with the upstream `main` branch, runs a global `cargo update` to fetch the latest patch versions of all Rust dependencies, and finally refreshes the `Makefile` itself.
 
-If the `Makefile` changed, re-run `make update` once to apply the new logic.
+If the `Makefile` changed, re-run `make update` **once** to apply the new logic.
 
 > **Warning:** Any manual changes to `AI.md`, the `.ai/` directory, the `visualization/` directory, or the `Makefile` will be overwritten. Your `src/` directory and `Cargo.toml` are left untouched — only `cargo update` will modify `Cargo.lock`.
 
