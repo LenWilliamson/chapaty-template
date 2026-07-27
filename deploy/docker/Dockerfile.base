@@ -1,0 +1,88 @@
+# syntax=docker/dockerfile:1
+
+# ==============================================================================
+# Chapaty base build image
+# ==============================================================================
+# This image is a build environment and nothing else. Its only job is to hold a
+# fully compiled target/release directory so that the per run image build can
+# recompile one strategy file in seconds instead of rebuilding every dependency.
+#
+# Build it on an amd64 runner, because Cloud Build and Cloud Run are both amd64.
+#
+# REGISTRY lives in the ARTIFACT_REGISTRY repository variable that the CI
+# workflow reads, and bin/build-images.sh sets the same default locally.
+# ==============================================================================
+
+# The toolchain is pinned to the rust-version field in Cargo.toml.
+FROM rust:1.97-slim-bookworm
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake \
+        g++ \
+        gcc \
+        libc6-dev \
+        make \
+        pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+# Every later path in this file, and every path in Dockerfile.agent, is relative
+# to this directory. The per run build must know exactly where the strategy file
+# lives. That is why the location is fixed here once.
+WORKDIR /app
+
+# The manifest and the lockfile are copied on a layer of their own, ahead of any
+# Rust source. Docker throws away every layer after the first one that changed.
+# If source were copied first then editing a strategy would also discard the
+# compiled dependencies. This is what we want to avoid. That's why this image
+# exists. It should serve as a cache layer. (the entire purpose of this image)
+COPY Cargo.toml Cargo.lock ./
+
+# This config only sets rustdoc flags today, but it is copied so that a build
+# inside the image behaves the same way as a build on a developer machine.
+COPY .cargo/config.toml .cargo/config.toml
+
+# Dependencies are compiled against a placeholder main so that this layer
+# depends on the manifest and the lockfile and on nothing else. Cargo needs some
+# source file to exist before it will build anything, and a main that does
+# nothing is enough, because cargo compiles every crate in the dependency graph
+# whether or not the source happens to use it.
+#
+# The artifacts belonging to chapaty-template itself are deleted afterwards.
+# They were built from the placeholder rather than from real code, and leaving
+# them behind would let cargo reuse a stale fingerprint for the real build.
+RUN mkdir -p src \
+    && echo 'fn main() {}' > src/main.rs \
+    && cargo build --release --locked \
+    && rm -rf src \
+        target/release/chapaty-template \
+        target/release/chapaty-template.d \
+        target/release/deps/chapaty_template* \
+        target/release/.fingerprint/chapaty-template-*
+
+# Now the real sources are copied. This layer is invalidated by any change under
+# src, which is fine, because the slow dependency build above is already cached
+# and will not be repeated.
+#
+# The strategy that ships in the repository, src/agents/template/agent.rs, stays
+# in the image and serves as the placeholder. It is a real agent that compiles,
+# so the crate graph and the feature set compiled here are identical to the ones
+# a generated strategy will compile against.
+#
+# That path is the one the per run build overwrites. It follows from
+# src/main.rs, where the ActiveAgent enum carries a Template variant and the
+# strum attribute serializes variants in lowercase, and from src/agents.rs and
+# src/agents/template.rs, which declare the matching module chain.
+COPY src ./src
+
+# The target/release holds a compiled artifact for every dependency, so a later
+# build that changes only the strategy file has nothing left to do except
+# recompile the chapaty-template binary itself.
+#
+# RUSTFLAGS is deliberately left alone here. We pass -C target-cpu=native in the
+# Makefile for local runs, but the machine that builds this image is
+# not the machine that runs the job, so tuning for the builder CPU would produce
+# a binary that can crash with an illegal instruction on Cloud Run.
+RUN cargo build --release --locked
+
+# There is deliberately no ENTRYPOINT. This image is a build environment, it is
+# never deployed on its own.

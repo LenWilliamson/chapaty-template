@@ -1,0 +1,297 @@
+name: Images
+
+# =============================================================================
+# What this workflow does
+# =============================================================================
+# It builds and publishes the two images the hosted pipeline needs. The Rust
+# base image holds a fully compiled dependency tree so that a per run build only
+# has to recompile one strategy file. The Python tearsheet image turns a
+# finished backtest into an HTML report.
+#
+# Both come from this one repository and are tested together, so they are always
+# published from the same tag in the same run. Splitting them into two workflows
+# would let one succeed while the other failed, and then the Rust code that
+# writes the CSV files and the Python code that reads them would disagree about
+# the format.
+#
+# =============================================================================
+# Why a tag and not a merge
+# =============================================================================
+# Merging into main publishes nothing. A release happens when a tag starting
+# with v is pushed. The job then checks that the tag matches the version in
+# Cargo.toml and stops before publishing if they disagree, which catches a
+# release cut without bumping the manifest.
+#
+# =============================================================================
+# Architecture
+# =============================================================================
+# Everything is built for linux/amd64, because Cloud Build and Cloud Run both
+# run on amd64. Do not move these jobs to an arm64 runner.
+#
+# =============================================================================
+# Required configuration
+# =============================================================================
+# The configuration is set in the repository settings.
+#
+#   ARTIFACT_REGISTRY (variable)
+#     The development registry path that every image name below is built on.
+#     A fork has no value set, and the jobs skip.
+#
+#   GCP_WORKLOAD_IDENTITY_PROVIDER (secret)
+#     The full resource name of the Workload Identity provider that Google
+#     trusts to vouch for this repository's GitHub OIDC tokens.
+#
+#   GCP_SERVICE_ACCOUNT (secret)
+#     The email of the service account the jobs impersonate once that token has
+#     been exchanged. It only needs permission to push to the dev registry.
+# =============================================================================
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  REGISTRY: ${{ vars.ARTIFACT_REGISTRY }}
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  # ============================================================================
+  # Resolve the version once, for every job that follows.
+  # ============================================================================
+  # This lives in a job of its own. The created images must always be tagged
+  # with the same version.
+  #
+  # There is no fork guard on this job. It touches no secret and no registry, so
+  # letting it run keeps the dependency graph simple, and the jobs that do
+  # publish are guarded individually.
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The version in Cargo.toml is the single source of truth for a release.
+      # A cargo version can carry build metadata after a plus sign, as 1.3.5+2
+      # does, and a plus sign is not a legal character in a Docker tag, so it is
+      # rewritten to a dash.
+      - name: Resolve the version and the image tag
+        id: meta
+        run: |
+          VERSION=$(grep -m1 '^version = ' Cargo.toml | cut -d'"' -f2)
+          if [ -z "$VERSION" ]; then
+            echo "::error::Could not read version from Cargo.toml"
+            exit 1
+          fi
+          echo "version=$VERSION"    >> "$GITHUB_OUTPUT"
+          echo "tag=${VERSION//+/-}" >> "$GITHUB_OUTPUT"
+
+      # A git tag that disagrees with Cargo.toml means the release was cut
+      # without bumping the manifest, and the images would then be published
+      # under a version nobody asked for. Catch that here, once, before either
+      # build job has spent any time.
+      - name: Check the git tag matches Cargo.toml
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          GIT_VERSION="${GITHUB_REF_NAME#v}"
+          CARGO_VERSION="${{ steps.meta.outputs.version }}"
+          if [ "$GIT_VERSION" != "$CARGO_VERSION" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match Cargo.toml version $CARGO_VERSION"
+            exit 1
+          fi
+
+  # ============================================================================
+  # The Rust build environment image.
+  # ============================================================================
+  build-base:
+    needs: version
+    # A fork has neither the registry nor the credentials, so this could only
+    # ever fail for them. Skipping keeps their copy of the repository green.
+    if: github.repository == 'LenWilliamson/chapaty-template'
+    # ubuntu-latest is amd64, which is what Cloud Build and Cloud Run run on.
+    # Do not move this to an arm64 runner.
+    runs-on: ubuntu-latest
+
+    steps:
+      # This runs before anything else so that a missing setting is reported as
+      # a missing setting. Without it the run gets as far as the authentication
+      # step and fails there, and the obvious reading of that error is that the
+      # permissions are wrong rather than that a value was never set.
+      - name: Check the required configuration is present
+        env:
+          WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          MISSING=0
+          if [ -z "$REGISTRY" ]; then
+            echo "::error::The ARTIFACT_REGISTRY repository variable is empty or not set."
+            MISSING=1
+          fi
+          if [ -z "$WIF_PROVIDER" ]; then
+            echo "::error::The GCP_WORKLOAD_IDENTITY_PROVIDER repository secret is empty or not set."
+            MISSING=1
+          fi
+          if [ -z "$SERVICE_ACCOUNT" ]; then
+            echo "::error::The GCP_SERVICE_ACCOUNT repository secret is empty or not set."
+            MISSING=1
+          fi
+          if [ "$MISSING" -eq 1 ]; then
+            echo "::error::Set the missing values under Settings, then Secrets and variables, then Actions."
+            exit 1
+          fi
+          echo "Registry and credentials are configured."
+
+      - uses: actions/checkout@v4
+
+      # Authenticate via Workload Identity Federation
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # Installs gcloud, which the next step needs to write the docker
+      # credential helper configuration.
+      - name: Set up the Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      # Points docker at gcloud as the credential helper for this registry host,
+      # so the push below authenticates with the token obtained above. The host
+      # is the regional Artifact Registry endpoint, which is not a secret on its
+      # own because it names no project.
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker europe-west3-docker.pkg.dev --quiet
+
+      # Buildx is used so that the platform can be requested explicitly rather
+      # than inherited from whatever the runner happens to be.
+      - uses: docker/setup-buildx-action@v3
+
+      # The image name has to be exactly this. The pipeline builds it by joining
+      # the registry prefix with the suffix -base, so a different name here
+      # means Cloud Build looks for an image that was never pushed.
+      #
+      # The latest tag is published as a convenience only.
+      #
+      # The GitHub Actions cache is used here because this build compiles the
+      # whole dependency tree, so a rebuild triggered by a toolchain change
+      # rather than a dependency change should not start again from nothing.
+      - name: Build and push the base image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.base
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/btrun-base:${{ needs.version.outputs.tag }}
+            ${{ env.REGISTRY }}/btrun-base:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # The digest is what a later promotion to production copies, so it is
+      # recorded where somebody can read it off the run without digging through
+      # the build log.
+      - name: Record the digest
+        run: |
+          {
+            echo "### Base image"
+            echo ""
+            echo '```'
+            echo "tag:    ${{ needs.version.outputs.tag }}"
+            echo "digest: ${{ steps.build.outputs.digest }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # ============================================================================
+  # The Python tearsheet image.
+  # ============================================================================
+  build-tearsheet:
+    needs: version
+    # A fork has neither the registry nor the credentials, so this could only
+    # ever fail for them. Skipping keeps their copy of the repository green.
+    if: github.repository == 'LenWilliamson/chapaty-template'
+    runs-on: ubuntu-latest
+
+    steps:
+      # Repeated here rather than shared:
+      #  - A job cannot borrow another job's steps
+      #  - We want to fail before the authentication step rather than during it.
+      - name: Check the required configuration is present
+        env:
+          WIF_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          SERVICE_ACCOUNT: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+        run: |
+          MISSING=0
+          if [ -z "$REGISTRY" ]; then
+            echo "::error::The ARTIFACT_REGISTRY repository variable is empty or not set."
+            MISSING=1
+          fi
+          if [ -z "$WIF_PROVIDER" ]; then
+            echo "::error::The GCP_WORKLOAD_IDENTITY_PROVIDER repository secret is empty or not set."
+            MISSING=1
+          fi
+          if [ -z "$SERVICE_ACCOUNT" ]; then
+            echo "::error::The GCP_SERVICE_ACCOUNT repository secret is empty or not set."
+            MISSING=1
+          fi
+          if [ "$MISSING" -eq 1 ]; then
+            echo "::error::Set the missing values under Settings, then Secrets and variables, then Actions."
+            exit 1
+          fi
+          echo "Registry and credentials are configured."
+
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up the Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure docker for Artifact Registry
+        run: gcloud auth configure-docker europe-west3-docker.pkg.dev --quiet
+
+      - uses: docker/setup-buildx-action@v3
+
+      # As with the base image, this name is fixed by what the pipeline joins
+      # together, and the latest tag is a convenience the pipeline never reads.
+      #
+      # The context is the repository root, the same as the base image uses,
+      # because the Dockerfile copies the script and the pinned requirements out
+      # of visualization/.
+      #
+      # There is no build cache configured here. This build only installs a
+      # handful of prebuilt wheels, so it finishes quickly from cold, and the
+      # bookkeeping of saving and restoring a cache would cost more than it
+      # saves.
+      - name: Build and push the tearsheet image
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.tearsheet
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.REGISTRY }}/btrun-tearsheet:${{ needs.version.outputs.tag }}
+            ${{ env.REGISTRY }}/btrun-tearsheet:latest
+
+      - name: Record the digest
+        run: |
+          {
+            echo "### Tearsheet image"
+            echo ""
+            echo '```'
+            echo "tag:    ${{ needs.version.outputs.tag }}"
+            echo "digest: ${{ steps.build.outputs.digest }}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

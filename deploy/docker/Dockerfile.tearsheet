@@ -1,0 +1,121 @@
+# syntax=docker/dockerfile:1
+
+# ==============================================================================
+# Chapaty tearsheet image
+# ==============================================================================
+# This image runs the QuantStats report generator as a one shot Cloud Run Job.
+# It gets 1 CPU and 1 GiB and has to be finished inside 60 seconds, which a
+# normal run manages in under 20.
+#
+# The job starts it with the agent name as a command line argument and with
+# RESULTS_CLOUD_URI as the only environment variable:
+#
+#   python generate_tearsheet.py template
+#
+# The script does its own Cloud Storage reads and writes, so there is no cloud
+# handling anywhere in this file.
+#
+# The build context is the repository root, the same as the Rust images use, so
+# every COPY path below starts with visualization/ and all three builds share
+# one .dockerignore:
+#
+# REGISTRY lives in the ARTIFACT_REGISTRY repository variable that the CI
+# workflow reads, and bin/build-images.sh sets the same default locally.
+# ==============================================================================
+
+# The patch version is pinned rather than left at 3.13, so that a new patch
+# release cannot quietly change the interpreter under a set of pinned wheels.
+FROM python:3.13.1-slim-bookworm AS builder
+
+# The dependencies go into a virtual environment rather than the system site
+# packages, because a virtual environment is a single self contained directory
+# that the second stage can copy across in one instruction.
+RUN python -m venv /opt/venv
+
+# Putting the virtual environment first on PATH means the pip below is the one
+# inside it. No need to spell out the full path every time.
+ENV PATH="/opt/venv/bin:$PATH"
+
+# The pinned requirements are copied on their own, ahead of the script. Docker
+# discards every layer after the first one that changed, so keeping the script
+# out of this layer means that editing the script does not force pip to resolve
+# and download everything again.
+COPY visualization/requirements.txt ./requirements.txt
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# ------------------------------------------------------------------------------
+# Stage 2: the image that actually runs
+# ------------------------------------------------------------------------------
+# Starting again from the same clean base means pip, its metadata and anything
+# else the install step left behind stay in the builder and never ship.
+FROM python:3.13.1-slim-bookworm AS runtime
+
+# A dedicated account so the job does not run as root. The home directory is
+# created and owned by that account.
+RUN groupadd --system --gid 1001 chapaty \
+    && useradd --system --uid 1001 --gid chapaty \
+        --create-home --home-dir /home/chapaty chapaty
+
+# The finished virtual environment comes across as a single directory.
+COPY --from=builder /opt/venv /opt/venv
+
+# The same PATH trick as in the builder, so that python resolves to the one in
+# the virtual environment and the ENTRYPOINT does not have to hardcode a path.
+ENV PATH="/opt/venv/bin:$PATH"
+
+# Cloud Run collects stdout and stderr as logs. Without this, Python buffers its
+# output and a job that finishes in a few seconds can appear to have printed
+# nothing at all until the moment it exits.
+ENV PYTHONUNBUFFERED=1
+
+# The virtual environment already contains compiled bytecode from the pip
+# install, so there is nothing useful left to write. Writing would only
+# populate the container filesystem with information not needed.
+ENV PYTHONDONTWRITEBYTECODE=1
+
+# There is no display in a container, so matplotlib is told to use the file
+# writing backend directly instead of probing for one that cannot exist. The
+# config directory is named explicitly for the same reason the home directory
+# exists, to keep matplotlib from hunting for somewhere writable at startup.
+ENV MPLBACKEND=Agg
+ENV MPLCONFIGDIR=/home/chapaty/.config/matplotlib
+
+# The script derives its own paths from where it sits on disk. It computes the
+# project root as the parent of its parent directory, so it has to stay inside a
+# directory named visualization, one level below the working directory, or the
+# reports path it builds will point somewhere that does not exist.
+WORKDIR /app
+COPY visualization/generate_tearsheet.py visualization/generate_tearsheet.py
+
+# Before uploading, the script writes the report to
+# chapaty/reports/<agent>/tearsheet.html under the project root and calls mkdir
+# with parents for that path. Under /app, which root owns, that mkdir fails and
+# the run dies at the very last moment, after all of the real work is already
+# done. Creating the directory here and handing it to the job account means the
+# mkdir finds it already there and the write succeeds.
+RUN mkdir -p /app/chapaty/reports \
+    && chown -R chapaty:chapaty /app/chapaty
+
+# Everything above needed root. Nothing below does.
+USER chapaty
+
+# Nothing here assumes an offline environment. quantstats downloads the SPY
+# benchmark series from Yahoo Finance while it builds the report, so the job
+# needs outbound internet access and the base image's CA certificates are what
+# let it verify that connection and the Cloud Storage one.
+
+# The script calls load_dotenv on a .env file that will never exist in this
+# image. That is not an error. load_dotenv on a missing path simply reports that
+# it loaded nothing and carries on, and the .dockerignore keeps any real .env
+# out of the build for good reason, so no file is added to satisfy it.
+
+# There is deliberately no check that an output file exists. When the equity
+# curve is flat the script prints a warning, writes nothing and exits with
+# status 0, and that is the correct outcome rather than a failure to detect.
+
+# The agent name is left off on purpose. It is the script's only positional
+# argument, so the caller supplies it and this image can generate a report for
+# any agent without being rebuilt.
+ENTRYPOINT ["python", "/app/visualization/generate_tearsheet.py"]
