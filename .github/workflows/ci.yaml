@@ -14,7 +14,7 @@ jobs:
   check-compliance:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # 1. Secret Leak Prevention
       - name: "[1/13] Security - Check for Leaked Environment Files"
@@ -55,7 +55,7 @@ jobs:
     needs: check-compliance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Setup latest stable Rust, includes caching by default, and adds clippy
       - uses: actions-rust-lang/setup-rust-toolchain@v1
@@ -114,7 +114,7 @@ jobs:
     needs: check-compliance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The base image compiles every dependency in release mode, so it is the
       # slow one. It runs first because the agent image starts from it.

@@ -74,7 +74,7 @@ jobs:
       version: ${{ steps.meta.outputs.version }}
       tag: ${{ steps.meta.outputs.tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # The version in Cargo.toml is the single source of truth for a release.
       # A cargo version can carry build metadata after a plus sign, as 1.3.5+2
@@ -146,11 +146,11 @@ jobs:
           fi
           echo "Registry and credentials are configured."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Authenticate via Workload Identity Federation
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
@@ -158,7 +158,7 @@ jobs:
       # Installs gcloud, which the next step needs to write the docker
       # credential helper configuration.
       - name: Set up the Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       # Points docker at gcloud as the credential helper for this registry host,
       # so the push below authenticates with the token obtained above. The host
@@ -169,7 +169,7 @@ jobs:
 
       # Buildx is used so that the platform can be requested explicitly rather
       # than inherited from whatever the runner happens to be.
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # The image name has to be exactly this. The pipeline builds it by joining
       # the registry prefix with the suffix -base, so a different name here
@@ -182,7 +182,7 @@ jobs:
       # rather than a dependency change should not start again from nothing.
       - name: Build and push the base image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/Dockerfile.base
@@ -246,21 +246,21 @@ jobs:
           fi
           echo "Registry and credentials are configured."
 
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Authenticate to Google Cloud
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
           workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
 
       - name: Set up the Cloud SDK
-        uses: google-github-actions/setup-gcloud@v2
+        uses: google-github-actions/setup-gcloud@v3
 
       - name: Configure docker for Artifact Registry
         run: gcloud auth configure-docker europe-west3-docker.pkg.dev --quiet
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       # As with the base image, this name is fixed by what the pipeline joins
       # together, and the latest tag is a convenience the pipeline never reads.
@@ -275,7 +275,7 @@ jobs:
       # saves.
       - name: Build and push the tearsheet image
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: deploy/docker/Dockerfile.tearsheet
