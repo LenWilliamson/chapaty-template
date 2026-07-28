@@ -1,0 +1,81 @@
+# ==============================================================================
+# Common ignores
+# ==============================================================================
+# Everything listed here is not needed inside an image or harmful.
+
+# Version control history.
+.git
+.gitignore
+.gitattributes
+
+# CI definitions..
+.github
+
+# Secrets must never reach a build context. The example file is safe.
+.env
+.env.*
+!.env.example
+
+# Editor and operating system noise.
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+.idea
+.vscode
+
+# The Docker files themselves.
+deploy
+
+# Local developer tooling that no image runs.
+bin
+
+# Markdown files and LICENSE.
+*.md
+LICENSE
+
+# Generated backtest output from local runs.
+chapaty/reports/
+
+# Tool caches that are pure local state.
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ==============================================================================
+# Rust specific ignores
+# ==============================================================================
+
+# Host build directory.
+target
+debug
+
+# Backup files written by rustfmt.
+**/*.rs.bk
+
+# Debug symbol files produced by Windows builds of rustc.
+*.pdb
+
+# Output written by cargo mutants.
+**/mutants.out*/
+
+# Formatting rules are only used by rustfmt, which never runs inside the image.
+rustfmt.toml
+
+# ==============================================================================
+# Python specific ignores
+# ==============================================================================
+# Note that visualization/ itself is not ignored. The tearsheet image copies the
+# script and the pinned requirements out of it, so only the generated files
+# inside it are excluded.
+
+# Compiled bytecode from local runs.
+**/__pycache__
+**/*.pyc
+**/*.pyo
+
+# The local developer virtual environment.
+.venv

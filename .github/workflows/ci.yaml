@@ -17,7 +17,7 @@ jobs:
       - uses: actions/checkout@v4
 
       # 1. Secret Leak Prevention
-      - name: "[1/10] Security - Check for Leaked Environment Files"
+      - name: "[1/13] Security - Check for Leaked Environment Files"
         run: |
           if git ls-files --error-unmatch .env > /dev/null 2>&1; then
             echo "::error::CRITICAL: .env file is being tracked by git! Remove it immediately.";
@@ -30,7 +30,7 @@ jobs:
       # group_imports, wrap_comments, doc_comment_code_block_width,
       # format_macro_bodies), which stable rustfmt silently ignores. Install
       # nightly + rustfmt for this step only and check with it.
-      - name: "[2/10] Style - Check Formatting (Nightly)"
+      - name: "[2/13] Style - Check Formatting (Nightly)"
         run: |
           rustup toolchain install nightly --profile minimal --component rustfmt
           cargo +nightly fmt --all -- --check
@@ -38,12 +38,12 @@ jobs:
       # 3. Dependency Sort Order (cargo-sort)
       - name: Install cargo-sort
         uses: taiki-e/install-action@cargo-sort
-      - name: "[3/10] Style - Check Cargo.toml Sort Order"
+      - name: "[3/13] Style - Check Cargo.toml Sort Order"
         run: cargo sort --check
 
       # 4. No local path dependency on chapaty (template-specific: consumers
       # must depend on the published crate, not a local checkout of chapaty).
-      - name: "[4/10] Dependency - Check no local path dependency for chapaty"
+      - name: "[4/13] Dependency - Check no local path dependency for chapaty"
         run: |
           if grep -E '^chapaty\s*=.*path\s*=' Cargo.toml; then
             echo "::error::Cargo.toml contains a local path dependency for chapaty. Replace it with a versioned crates.io release: chapaty = \"<version>\"";
@@ -67,29 +67,69 @@ jobs:
         uses: taiki-e/install-action@cargo-audit
 
       # 5. Security Audit (Checks Cargo.lock for CVEs)
-      - name: "[5/10] Security Audit"
+      - name: "[5/13] Security Audit"
         run: cargo audit
 
       # 6. Clippy (Linter)
-      - name: "[6/10] Lint with Clippy"
+      - name: "[6/13] Lint with Clippy"
         run: cargo clippy --all-targets --all-features -- -D warnings
 
       # 7. Build (Ensures everything compiles)
-      - name: "[7/10] Build Workspace"
+      - name: "[7/13] Build Workspace"
         run: cargo build --all-features --verbose
 
       # 8. Unit & Integration Tests
       # No --doc step here: this is a binary-only crate (no src/lib.rs), and
       # `cargo test --doc` errors with "no library targets found" on one.
-      - name: "[8/10] Run Unit and Integration Tests"
+      - name: "[8/13] Run Unit and Integration Tests"
         run: cargo test --all-features --tests --verbose
 
       # 9. Documentation Layout (catches broken intra-doc links etc.)
-      - name: "[9/10] Verify Documentation Layout"
+      - name: "[9/13] Verify Documentation Layout"
         run: cargo doc --no-deps --document-private-items --all-features --verbose
         env:
           RUSTDOCFLAGS: "-D warnings"
 
       # 10. Release Build (final compile sanity check)
-      - name: "[10/10] Build Release Binary"
+      - name: "[10/13] Build Release Binary"
         run: cargo build --release --verbose
+
+  # JOB 3: Container Images (sanity build only, this workflow never pushes)
+  #
+  # The images are built rather than checked, because a Dockerfile that copies a
+  # file which no longer exists passes every static check and only fails when it
+  # is actually built. Building is the check.
+  #
+  # These run on the same machine as everything else, using the same plain
+  # docker build that bin/build-images.sh runs locally. The runner is an Intel
+  # machine, which is what Cloud Run and Cloud Build use, so nothing is emulated
+  # and nothing extra has to be set up.
+  #
+  # Publishing happens only in the Images workflow, and only from a release tag.
+  # Nothing here logs in to a registry, so nothing here can push.
+  #
+  # All three run on every push and every pull request for main and develop.
+  # Feature branches reach these through the pull request that targets develop.
+  build-images:
+    needs: check-compliance
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The base image compiles every dependency in release mode, so it is the
+      # slow one. It runs first because the agent image starts from it.
+      - name: "[11/13] Build the Rust base image"
+        run: ./bin/build-images.sh base
+
+      # This is the step that proves the two image split actually works. The
+      # agent image compiles with the network switched off, so if the base
+      # image were missing even one crate, this is the only place in the whole
+      # repository where that would surface.
+      - name: "[12/13] Build the agent image offline against that base"
+        run: ./bin/build-images.sh agent
+
+      # The Python image. This catches a COPY path that no longer exists, a
+      # file newly excluded by .dockerignore, or pinned versions that cannot be
+      # installed together.
+      - name: "[13/13] Build the tearsheet image"
+        run: ./bin/build-images.sh tearsheet

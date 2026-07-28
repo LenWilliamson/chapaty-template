@@ -1,0 +1,87 @@
+# syntax=docker/dockerfile:1
+# check=skip=InvalidDefaultArgInFrom
+#
+# We skip the warning because BASE_IMAGE below has no default value. It is
+# intentional. Explained where it is declared.
+
+# ==============================================================================
+# Chapaty per run agent image
+# ==============================================================================
+# This image is built on every user run, inside Google Cloud Build, and has to
+# finish in seconds. It can only do that because the base image already carries
+# a warm target/release, so the single strategy file copied in below is the only
+# thing left to compile.
+#
+# The build context for this file is a directory that contains one file called
+# agent.rs, which is the generated strategy.
+#
+# Build it on an amd64 runner, because Cloud Build and Cloud Run are both amd64.
+#
+# REGISTRY lives in the ARTIFACT_REGISTRY repository variable that the CI
+# workflow reads, and bin/build-images.sh sets the same default locally.
+# ==============================================================================
+
+# Declared before the first FROM so that it can be used in it.
+#
+# There is deliberately no default value. A default would have to spell out the
+# registry, which names the Google Cloud project, and this repository is public.
+# It would also be a floating tag, and a rebuild of the base image could then
+# silently change what a user run compiles against. Requiring the caller to pass
+# an exact version tag makes both problems impossible:
+#
+#   --build-arg BASE_IMAGE=$REGISTRY/btrun-base:1.3.5-2
+#
+# Leaving it unset fails immediately with a blank base name rather than building
+# something unintended.
+ARG BASE_IMAGE
+
+# ------------------------------------------------------------------------------
+# Stage 1: compile the generated strategy
+# ------------------------------------------------------------------------------
+FROM ${BASE_IMAGE} AS builder
+
+# The base image already sets this, but it is repeated so that the COPY below
+# lands in the right place even if the base image is ever restructured.
+WORKDIR /app
+
+# The generated strategy replaces the placeholder that the base image shipped
+# with. This is the only source file that differs between one user run and the
+# next, and because it is copied after everything else, everything else stays
+# cached.
+COPY agent.rs src/agents/template/agent.rs
+
+# --offline forbids any network access, so if the base image were missing even
+# one compiled dependency this would fail here rather than silently downloading
+# it and turning a seconds long build into a minutes long one. --locked refuses
+# to change Cargo.lock, so the versions compiled here are exactly the versions
+# the base image warmed up.
+RUN cargo build --release --offline --locked
+
+# ------------------------------------------------------------------------------
+# Stage 2: the image that actually runs
+# ------------------------------------------------------------------------------
+# The runtime base stays on cc-debian12. It is the smallest distroless image
+# that supplies the glibc and libgcc that this binary needs, and it also carries
+# the CA certificates that rustls reads to talk to Google Cloud Storage.
+FROM gcr.io/distroless/cc-debian12 AS runtime
+
+# Only the compiled binary crosses the stage boundary. Nothing else does, so the
+# deployed image contains no shell, no cargo, no C compiler and no source code.
+# The binary name is the package name from Cargo.toml.
+COPY --from=builder /app/target/release/chapaty-template /usr/local/bin/chapaty-template
+
+# When RESULTS_CLOUD_URI is unset the program falls back to writing reports to
+# chapaty/reports relative to the working directory, so the working directory is
+# set to the one place that is reliably writable. In production
+# RESULTS_CLOUD_URI is set and nothing is written here at all.
+WORKDIR /tmp
+
+# The backtest recurses deeply enough that the default 8 MB thread stack is not
+# enough. The Makefile raises it to 64 MiB for local runs, and the same value is
+# baked in here because there is no Makefile in a Cloud Run Job to do it.
+ENV RUST_MIN_STACK=67108864
+
+# A Cloud Run Job starts this image with no command override. Without an
+# ENTRYPOINT the container would fall back to the base image default, exit
+# immediately, and report success while never having run the backtest at all.
+ENTRYPOINT ["/usr/local/bin/chapaty-template"]

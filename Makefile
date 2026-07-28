@@ -4,15 +4,16 @@
 # Usage: make <target>
 #
 # Targets:
-#   setup   : One-time install (compiles Rust release build + Python deps)
-#   run     : Runs the backtest and generates the QuantStats HTML tearsheet
-#   update  : Refreshes LLM prompts + viz script, bumps chapaty crate
-#   check   : Runs fmt, clippy, and tests (./bin/pre-push.sh hook)
-#   doctor  : Validates required dependencies (Rust + Python)
-#   clean   : Removes build artifacts, reports, and the Python venv
+#   setup	: One-time install (compiles Rust release build + Python deps)
+#   run		: Runs the backtest and generates the QuantStats HTML tearsheet
+#   update	: Refreshes LLM prompts + viz script, bumps chapaty crate
+#   check	: Runs fmt, clippy, and tests (./bin/pre-push.sh hook)
+#   doctor	: Validates required dependencies (Rust + Python)
+#   clean	: Removes build artifacts, reports, and the Python venv
+#   eject	: Deletes .github, deploy, bin, .dockerignore (optional, never automatic)
 # ==============================================================================
 
-.PHONY: setup run update check doctor clean
+.PHONY: setup run update check doctor clean eject
 
 # Public repo used by `make update` to pull the latest prompts.
 TEMPLATE_REPO ?= https://raw.githubusercontent.com/LenWilliamson/chapaty-template/refs/heads/main
@@ -23,7 +24,7 @@ VENV_PYTHON   := $(PYTHON_VENV)/bin/python
 CARGO_RUSTFLAGS := -C target-cpu=native
 
 setup: doctor
-	@echo ">> Building chapaty in release mode (first run downloads ~2 min of deps)..."
+	@echo ">> Building chapaty in release mode (first run downloads and compiles ~6 min of deps)..."
 	RUSTFLAGS="$(CARGO_RUSTFLAGS)" cargo build --release
 	@echo ">> Creating Python virtual environment in $(PYTHON_VENV)..."
 	python3 -m venv $(PYTHON_VENV)
@@ -32,6 +33,9 @@ setup: doctor
 	@echo ">> Installing Python visualization dependencies..."
 	$(VENV_PIP) install -r visualization/requirements.txt --quiet
 	@echo ">> Setup complete. Run 'make run' to backtest."
+	@echo ">> This repository also carries files only needed to maintain the template"
+	@echo ">> itself (.github, deploy, bin, .dockerignore). Run 'make eject'"
+	@echo ">> if you want them gone."
 
 run:
 	@if [ ! -d "$(PYTHON_VENV)" ]; then \
@@ -77,8 +81,23 @@ doctor:
 	@echo ">> Checking required dependencies..."
 	@echo ""
 	@MISSING=0; \
+	REQUIRED_RUST=$$(grep -m1 '^rust-version' Cargo.toml | cut -d'"' -f2); \
 	if command -v rustc > /dev/null 2>&1; then \
-		echo "  Rust:   $$(rustc --version)"; \
+		HAVE_RUST=$$(rustc --version | awk '{print $$2}' | cut -d- -f1); \
+		if [ -z "$$REQUIRED_RUST" ]; then \
+			echo "  Rust:   $$(rustc --version)"; \
+		elif awk -v have="$$HAVE_RUST" -v want="$$REQUIRED_RUST" 'BEGIN { \
+			n = split(have, h, "."); m = split(want, w, "."); \
+			for (i = 1; i <= 3; i++) { \
+				hv = (i <= n ? h[i] + 0 : 0); wv = (i <= m ? w[i] + 0 : 0); \
+				if (hv > wv) exit 0; if (hv < wv) exit 1; \
+			} exit 0 }'; then \
+			echo "  Rust:   $$(rustc --version) (OK, requires $$REQUIRED_RUST+)"; \
+		else \
+			echo "  Rust:   $$(rustc --version) (TOO OLD)"; \
+			echo "            Requires Rust $$REQUIRED_RUST+ (rust-version in Cargo.toml). Update via: rustup update"; \
+			MISSING=1; \
+		fi; \
 	else \
 		echo "  Rust:   NOT FOUND"; \
 		echo "            Install via: https://www.rust-lang.org/tools/install"; \
@@ -110,3 +129,16 @@ clean:
 	rm -rf reports chapaty/reports
 	@echo ">> Removing Python virtual environment..."
 	rm -rf $(PYTHON_VENV)
+
+# This is a separate target on purpose, and never runs as part of 'setup'. A
+# maintainer of the template itself may re-run 'make setup' for reasons that
+# have nothing to do with this cleanup, for example after 'make clean', and a
+# destructive step hiding inside a routine target is how you lose work by
+# accident. Deleting these files is something only a template user decides to
+# do, once, on purpose, by typing this exact command.
+eject:
+	@echo ">> Removing template maintainer files: .github, deploy, bin, .dockerignore"
+	@echo ">>   These only build and publish the container images for the hosted"
+	@echo ">>   pipeline. You do not need any of them to write or run a strategy."
+	rm -rf .github deploy bin .dockerignore
+	@echo ">> Done. Your working copy no longer has them."

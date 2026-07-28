@@ -26,6 +26,9 @@ Windows users: Please read the [Windows Users](#windows-users) section before pr
 git clone --depth 1 https://github.com/LenWilliamson/chapaty-template.git ct
 cd ct
 
+# Optional: remove template maintainer files
+make eject
+
 # 2. Check dependencies (Rust + Python)
 make doctor
 
@@ -107,6 +110,8 @@ _(Example: Checking out tag `v1.1.2+5` guarantees you are using the 5th iteratio
 
 ## Repository Layout
 
+Run `make eject` to delete the template maintainer files.
+
 ```text
 chapaty-template/
 ├── AI.md                        # AI bootstrap (defers to .ai/)
@@ -116,11 +121,19 @@ chapaty-template/
 │   ├── chapaty-api.md           # Exact chapaty API surface (don't hallucinate)
 │   ├── rust-vibe-rules.md       # Rust rules for user code
 │   └── update-prompts.md        # Triage prompt for post-release .ai/ updates
+├── .dockerignore                # Keeps junk and secrets out of image builds (you may delete this)
 ├── .github/
 │   └── workflows/
+│       ├── base-image.yaml      # Publishes container images on a release tag (you may delete this)
 │       └── ci.yaml              # CI/CD pipeline (you may delete this)
 ├── bin/
+│   ├── build-images.sh          # Builds the container images locally, never pushes (you may delete this)
 │   └── pre-push.sh              # fmt + clippy + audit + test + doc + build (you may delete this)
+├── deploy/
+│   └── docker/                  # Container images for the hosted service (you may delete this)
+│       ├── Dockerfile.agent     # Per run image: compiles one strategy, then a tiny runtime image
+│       ├── Dockerfile.base      # Prebuilt dependency tree, so a per run build takes seconds
+│       └── Dockerfile.tearsheet # Python image that turns a finished backtest into the HTML report
 ├── chapaty/
 │   └── reports/                 # Output reports and CSVs (generated after `make run`)
 │       ├── cumulative_returns.csv
