@@ -1,5 +1,3 @@
-name: Images
-
 # =============================================================================
 # What this workflow does
 # =============================================================================
@@ -45,6 +43,7 @@ name: Images
 #     The email of the service account the jobs impersonate once that token has
 #     been exchanged. It only needs permission to push to the dev registry.
 # =============================================================================
+name: Images
 
 on:
   push:

@@ -19,7 +19,8 @@ pub fn install_panic_hook() {
     let default_hook = panic::take_hook();
 
     panic::set_hook(Box::new(move |info| {
-        // Keep the default formatting/behavior (stderr message, location, etc.).
+        // Keep the default formatting/behavior (stderr message, location,
+        // etc.).
         default_hook(info);
         if GCP_CRASH_LOG_PREFIX.is_some() {
             let body = format!("{info}\n\nStack Backtrace:\n{}", Backtrace::capture());
