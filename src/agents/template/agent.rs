@@ -208,10 +208,11 @@ impl Agent for TemplateAgent {
     }
 
     fn reset(&mut self) {
-        // Reset every streaming indicator here by calling its `.reset()` method. Never
-        // rebuild an indicator from scratch, because that forces you to thread its
-        // configuration through again by hand and one mismatch changes the indicator
-        // silently between episodes.
+        // Reset every streaming indicator here by calling its `.reset()`
+        // method. Never rebuild an indicator from scratch, because that
+        // forces you to thread its configuration through again by hand
+        // and one mismatch changes the indicator silently between
+        // episodes.
         self.state = AgentState::default();
         self.trade_counter = 0;
         self.last_processed_ts = None;
@@ -224,15 +225,16 @@ impl Agent for TemplateAgent {
         // Specification section 3: Observation Inputs
         // ======================================================================================
 
-        // 1. Read the latest bar. Wait for the next call if the stream has no data yet.
+        // 1. Read the latest bar. Wait for the next call if the stream has no
+        //    data yet.
         let Some(candle) = market_view.ohlcv().last_event(&self.ohlcv_future_id) else {
             return Ok(Actions::no_op());
         };
 
-        // If you need the live market price for a calculation or an order, read it
-        // safely. Never use `?` or `.unwrap()` here, because the price can be
-        // missing when the market has not printed a tick yet, and that would
-        // crash the run.
+        // If you need the live market price for a calculation or an order, read
+        // it safely. Never use `?` or `.unwrap()` here, because the
+        // price can be missing when the market has not printed a tick
+        // yet, and that would crash the run.
         //
         //     let price = match
         // market_view.try_resolved_close_price(self.ohlcv_future_id.symbol) {
@@ -240,37 +242,38 @@ impl Agent for TemplateAgent {
         //         Err(_) => return Ok(Actions::no_op()),
         //     };
 
-        // 2. Advance internal state once per new bar (idempotency check). `act()` may
-        //    run several times for the same bar, so only move forward on a new close
-        //    timestamp. Feed any streaming indicator here, for example
-        //    `self.current_sma = self.sma.update(candle.close.0)`. While an indicator
-        //    is warming up it returns `None`, so return `Actions::no_op()` until it is
-        //    ready.
+        // 2. Advance internal state once per new bar (idempotency check).
+        //    `act()` may run several times for the same bar, so only move
+        //    forward on a new close timestamp. Feed any streaming indicator
+        //    here, for example `self.current_sma =
+        //    self.sma.update(candle.close.0)`. While an indicator is warming up
+        //    it returns `None`, so return `Actions::no_op()` until it is ready.
         if self.last_processed_ts != Some(candle.close_timestamp) {
             self.last_processed_ts = Some(candle.close_timestamp);
         }
 
-        // 3. Read the current position. Entry and exit logic branch on whether a trade
-        //    is open, and closing a trade needs its `trade_id`. Your own `self.state`
-        //    and the engine's view of the position can disagree, because the engine
-        //    closes a trade on its stop loss or take profit without telling the state
-        //    machine. Always treat the engine as the source of truth for whether a
-        //    trade is still open.
+        // 3. Read the current position. Entry and exit logic branch on whether
+        //    a trade is open, and closing a trade needs its `trade_id`. Your
+        //    own `self.state` and the engine's view of the position can
+        //    disagree, because the engine closes a trade on its stop loss or
+        //    take profit without telling the state machine. Always treat the
+        //    engine as the source of truth for whether a trade is still open.
         let active_trade = obs.states.find_active_trade_for_agent(&self.identifier());
         let market_id: MarketId = self.ohlcv_future_id.into();
 
-        // 4. Drive the state machine. Replace the placeholder decisions with your
-        //    logic.
+        // 4. Drive the state machine. Replace the placeholder decisions with
+        //    your logic.
         let actions = match self.state {
             // ==================================================================================
             // Specification section 4: Entry Logic
             // ==================================================================================
             AgentState::PreTrade => {
-                // Evaluate your entry condition here, for example from a streaming
-                // indicator or the candle, and produce `EntrySignal::Enter(direction)`
-                // when it triggers. Replace the single line below and leave the rest of
-                // this arm as it is, because it already wires up the state transition and
-                // the order.
+                // Evaluate your entry condition here, for example from a
+                // streaming indicator or the candle, and
+                // produce `EntrySignal::Enter(direction)`
+                // when it triggers. Replace the single line below and leave the
+                // rest of this arm as it is, because it already
+                // wires up the state transition and the order.
                 let signal = EntrySignal::Stay; // TODO: replace with your entry condition.
 
                 match signal {
@@ -288,11 +291,14 @@ impl Agent for TemplateAgent {
             // Specification section 5: Exit Logic
             // ==================================================================================
             AgentState::InTrade { entry_time } => {
-                // The engine handles the stop loss and take profit you set on the order.
-                // Add discretionary exits here. This example closes the trade once it has
-                // been open for longer than the `max_holding_minutes` parameter. Replace
-                // the rule with your own, and keep reading the limit from a parameter
-                // instead of writing a number here, so that the grid search can sweep it.
+                // The engine handles the stop loss and take profit you set on
+                // the order. Add discretionary exits here. This
+                // example closes the trade once it has
+                // been open for longer than the `max_holding_minutes`
+                // parameter. Replace the rule with your own,
+                // and keep reading the limit from a parameter
+                // instead of writing a number here, so that the grid search can
+                // sweep it.
                 let held_minutes = market_view
                     .current_timestamp()
                     .signed_duration_since(entry_time)
@@ -320,22 +326,26 @@ impl Agent for TemplateAgent {
             }
 
             AgentState::PostTrade => {
-                // The previous trade is finished. This template goes straight back to
-                // `PreTrade`, so the agent can look for the next setup on the following
-                // bar.
+                // The previous trade is finished. This template goes straight
+                // back to `PreTrade`, so the agent can look for
+                // the next setup on the following bar.
                 //
-                // Think carefully before you change this, because this arm and the episode
-                // length together decide how often the agent trades. `env()` uses
-                // `EpisodeLength::Infinite`, which never resets the agent during a run. If
-                // you make `PostTrade` a final state under an infinite episode, the agent
-                // takes one single trade over the whole dataset and then does nothing for
-                // the rest of the run. The grid search still completes and the leaderboard
+                // Think carefully before you change this, because this arm and
+                // the episode length together decide how often
+                // the agent trades. `env()` uses
+                // `EpisodeLength::Infinite`, which never resets the agent
+                // during a run. If you make `PostTrade` a final
+                // state under an infinite episode, the agent
+                // takes one single trade over the whole dataset and then does
+                // nothing for the rest of the run. The grid
+                // search still completes and the leaderboard
                 // still fills up, so the mistake is easy to miss.
                 //
-                // Keep this transition for a strategy that trades repeatedly. Remove it
-                // only if your strategy takes one trade per episode, and then set a finite
-                // episode length in `env()` as well, for example one episode per trading
-                // day.
+                // Keep this transition for a strategy that trades repeatedly.
+                // Remove it only if your strategy takes one
+                // trade per episode, and then set a finite
+                // episode length in `env()` as well, for example one episode
+                // per trading day.
                 self.state = AgentState::PreTrade;
                 Actions::no_op()
             }
