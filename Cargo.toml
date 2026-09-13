@@ -20,7 +20,8 @@ strum = { version = "0.28", features = ["derive"] }
 tokio = "1.53"
 
 [profile.release]
-debug = 1
+debug = false
+strip = "debuginfo"
 
 [lints.rust]
 unsafe_code = "forbid"
