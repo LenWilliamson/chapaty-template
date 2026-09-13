@@ -14,7 +14,7 @@
 # ==============================================================================
 
 # The toolchain is pinned to the rust-version field in Cargo.toml.
-FROM rust:1.97-slim-bookworm
+FROM rust:1.98-slim-bookworm
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         cmake \

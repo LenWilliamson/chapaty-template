@@ -47,7 +47,7 @@ open chapaty/reports/tearsheet.html        # macOS
 
 | Tool                         | Installation                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Rust** (`rustup`, `cargo`) | [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install) (Requires 1.97.0+, Edition 2024) |
+| **Rust** (`rustup`, `cargo`) | [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install) (Requires 1.98.0+, Edition 2024) |
 | **Python** (`3.13.1+`)       | [pyenv](https://github.com/pyenv/pyenv#installation) is recommended.                                    |
 | **LLM Environment**          | Claude Code, DeepSeek, Gemini CLI, Aider, Cursor, etc.                                                  |
 

@@ -2,7 +2,7 @@
 name = "chapaty-template"
 version = "1.3.6+1"
 edition = "2024"
-rust-version = "1.97.0"
+rust-version = "1.98.0"
 publish = false
 
 [dependencies]
