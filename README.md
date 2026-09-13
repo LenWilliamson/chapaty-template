@@ -47,7 +47,7 @@ open chapaty/reports/tearsheet.html        # macOS
 
 | Tool                         | Installation                                                                                            |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------- |
-| **Rust** (`rustup`, `cargo`) | [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install) (Requires 1.97.0+, Edition 2024) |
+| **Rust** (`rustup`, `cargo`) | [rust-lang.org/tools/install](https://www.rust-lang.org/tools/install) (Requires 1.98.0+, Edition 2024) |
 | **Python** (`3.13.1+`)       | [pyenv](https://github.com/pyenv/pyenv#installation) is recommended.                                    |
 | **LLM Environment**          | Claude Code, DeepSeek, Gemini CLI, Aider, Cursor, etc.                                                  |
 
@@ -96,7 +96,8 @@ If you need to pin your repository to a historical version, you can check out a 
 
 | Template Tag | Core `chapaty` Version | Notes         |
 | ------------ | ---------------------- | ------------- |
-| `v1.3.6+x`   | `1.3.6`                | Active Stable |
+| `v1.3.7+x`   | `1.3.7`                | Active Stable |
+| `v1.3.6+x`   | `1.3.6`                | Legacy        |
 | `v1.3.5+x`   | `1.3.5`                | Legacy        |
 | `v1.3.1+x`   | `1.3.1`                | Legacy        |
 | `v1.3.0+x`   | `1.3.0`                | Legacy        |

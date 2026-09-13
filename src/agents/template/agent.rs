@@ -8,7 +8,7 @@
 //!
 //! For a complete, minimal working strategy, read the demo agent that ships
 //! alongside this template. For advanced, production-grade references, see
-//! [chapaty-zoo](https://github.com/LenWilliamson/chapaty-zoo).
+//! [chapaty-garden](https://github.com/LenWilliamson/chapaty-garden).
 //!
 //! ## How this template maps to the specification
 //!
