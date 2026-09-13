@@ -39,8 +39,8 @@ make setup
 make run
 
 # 5. Open the resulting HTML report
-open chapaty/reports/tearsheet.html        # macOS
-# xdg-open chapaty/reports/tearsheet.html  # Linux
+open chapaty/reports/demo/tearsheet.html        # macOS
+# xdg-open chapaty/reports/demo/tearsheet.html  # Linux
 ```
 
 ## Prerequisites
