@@ -6,7 +6,7 @@ A continuous, stop-and-reverse (SAR) trend-following strategy. It uses a Fast SM
 
 ## 2. Environment
 
-**Preset:** `EnvPreset::BinanceBtcUsdt1dSma20Sma50`
+**Preset:** `EnvPreset::BinanceBtcUsdt1d`
 **Why:** Provides daily Bitcoin spot data. While the preset includes precomputed SMAs, this demo utilizes the `StreamingSma` technical indicator to demonstrate how users can compute their own stateful indicators on the fly.
 
 ## 3. Observation Inputs
