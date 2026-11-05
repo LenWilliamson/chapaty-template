@@ -93,7 +93,7 @@ src/
 └── sorted_vec_map.rs   ordered map helper used across the library
 ```
 
-**Key orientation rule:** if an indicator's parameters are swept in the grid search (for example the SMA period), use `indicator/streaming/`, because batch parameters are fixed when the environment is built. If the parameters are fixed for the whole run and a batch variant exists in `indicator/batch/`, batch is a good choice, especially with short episodes, because it has no per-episode warmup. Stateful or sequential concepts (FVG, HHLL, custom logic) are streaming only. Whatever you pick, check every streaming indicator's warmup against the episode length (`chapaty-api.md` section 5d).
+**Key orientation rule:** if an indicator's parameters are swept in the grid search (for example the SMA period), use `indicator/streaming/`, because batch parameters are fixed when the environment is built. If the parameters are fixed for the whole run and a batch variant exists in `indicator/batch/`, batch is a good choice, especially with short episodes, because it has no per-episode warmup. Stateful or sequential concepts (FVG, HHLL, custom logic) are streaming only. Whatever you pick, check every streaming indicator's warmup against the episode length (`chapaty-api.md` section 5d). If the library has no indicator you need, implement the `StreamingIndicator` trait yourself in `agent.rs` (`chapaty-api.md` section 12c).
 
 **Local:** `ls <CHAPATY_SRC>/indicator/streaming/` and `ls <CHAPATY_SRC>/indicator/batch/` to see the exact files currently in the library.
 

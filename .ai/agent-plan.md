@@ -43,6 +43,7 @@ The `chapaty` engine is built for evaluating agents in parallel.
 - The Agent struct must derive `Clone, Serialize, Debug`.
 - **Hard rule:** Numeric float axes use `GridAxis`; integer axes use standard iterator/range patterns; categorical sets use explicit `Vec`/array values.
 - **GridAxis is for float ranges; integer grids should use standard iterators.**
+- **Axis ends are exclusive.** The Rust range `a..b` excludes `b`, so use `a..=b` for integers. A `GridAxis` also treats its `end` as exclusive, but floating point rounding can make the end value appear, so set the end half a step beyond the last value you want, for example `GridAxis::new("0.8", "2.05", "0.1")` for 0.8 to 2.0 (see `chapaty-api.md` section 10). State the real first and last grid values in the spec's Parameters table so the user can check them.
 
 ## Phase 3: Rewrite Spec & Halt
 
@@ -157,7 +158,7 @@ _Note for LLM: If `make run` throws a Python error because `journal.csv` is miss
 
 ## Hard Engine Rules & Constraints
 
-1. **Never invent `chapaty` types.** If `.ai/chapaty-api.md` doesn't cover what you need, read the source directly from `~/.cargo/registry/src/chapaty-<VERSION>/src/` (resolve the version first via `cargo metadata`). Only ask the user if the source is unavailable.
+1. **Never invent `chapaty` types.** The exception is indicators: if the spec needs a technical indicator the library does not have, write it yourself by implementing the `StreamingIndicator` trait in `agent.rs` (see `chapaty-api.md` section 12c). Do not stop and do not ask the user to wait for a library release. For everything else, if `.ai/chapaty-api.md` doesn't cover what you need, read the source directly from `~/.cargo/registry/src/chapaty-<VERSION>/src/` (resolve the version first via `cargo metadata`). Only ask the user if the source is unavailable.
 
    **Source resolution order (must follow):**
    1. If local IDE/CLI access exists: inspect local Cargo registry first (`~/.cargo/registry/.../chapaty-*`) and current workspace files.

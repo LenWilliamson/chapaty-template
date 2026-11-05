@@ -618,14 +618,17 @@ journal.trade_stats()?.to_file_sync(&cfg)?;
 
 **Grid axis boundary (must follow):**
 
-- `GridAxis::new(start, end, step)` takes string arguments, returns `ChapatyResult`, and `.generate()` returns `Vec<f64>` with the end exclusive. Use it only for float ranges.
+- `GridAxis::new(start, end, step)` takes string arguments, returns `ChapatyResult`, and `.generate()` returns `Vec<f64>`. Use it only for float ranges.
 - Use standard iterators (`start..=end`, arrays, `Vec`) for integer and categorical axes.
+- **The end of an axis is exclusive.** This holds for `GridAxis` and for the Rust range `a..b`. The most common mistake is a sweep that silently misses its top value. For integers write the inclusive range `a..=b`.
+- **For a `GridAxis`, end half a step beyond the last value you want.** `GridAxis` produces `ceil((end - start) / step)` values, so floating point rounding can make the `end` value itself appear. For example `GridAxis::new("0.2", "0.8", "0.2")` generates `0.2, 0.4, 0.6, 0.8`, and `end = last + step` leaks this way often. A half step is safe against rounding in both directions.
 
 ```rust
-// DO: float axis via GridAxis
-let sl_values = GridAxis::new("0.8", "2.1", "0.1")?.generate(); // end exclusive
-// DO: integer axis via iterators
+// DO: float axis via GridAxis. Values: 0.8, 0.9, ..., 2.0 (last wanted 2.0, end = 2.0 + 0.05)
+let sl_values = GridAxis::new("0.8", "2.05", "0.1")?.generate();
+// DO: integer axis via iterators. Values: 14, 16, ..., 60 (inclusive range)
 let lookbacks: Vec<usize> = (14..=60).step_by(2).collect();
+// `(14..60)` would stop at 58: the end is exclusive.
 // DON'T: GridAxis for integer-only ranges
 ```
 
@@ -633,7 +636,7 @@ let lookbacks: Vec<usize> = (14..=60).step_by(2).collect();
 use itertools::iproduct;
 
 pub fn build(self) -> ChapatyResult<Vec<(usize, MyAgent)>> {
-    let sl_mults = GridAxis::new("0.8", "2.1", "0.1")?.generate(); // floats
+    let sl_mults = GridAxis::new("0.8", "2.05", "0.1")?.generate(); // floats 0.8..=2.0
     let lookbacks: Vec<i64> = vec![14, 20, 30, 45, 60];            // ints
 
     Ok(iproduct!(sl_mults, lookbacks)
@@ -673,7 +676,7 @@ Chapaty has two indicator systems. Choosing the right one matters for performanc
 
 - **Parameters swept per agent** (for example the SMA period is a grid parameter): use **streaming**. A batch indicator's parameters are fixed when the environment is built, so every agent in the grid would read the same values. This is the common case for grid searches.
 - **Parameters fixed for the whole run, and a batch version exists:** batch is a good choice, especially with short episodes, because it has no per-episode warmup (see section 5d).
-- **No batch version exists:** use streaming. The newer indicators (RMA, OBV RSI, rolling VWAP with bands) are streaming only.
+- **No batch version exists:** use streaming. The newer indicators (RMA, OBV RSI, rolling VWAP with bands) are streaming only. If no built-in streaming indicator fits either, write your own by implementing the `StreamingIndicator` trait (section 12c).
 
 ### 12a. Batch Indicators (fixed parameters, no per-episode warmup)
 
@@ -873,7 +876,13 @@ let sl_ref = slice.get(gap.creation_index().saturating_sub(3)); // Option<&Ohlcv
 
 ### 12c. Writing a custom indicator
 
-If the technical analysis you need is not in the library, do not be blocked. First check the quick reference in section 12b, because several common building blocks (RMA, rolling VWAP with bands, OBV RSI) already exist. Otherwise implement `StreamingIndicator` on your own struct, store it on the agent, and reset it in `Agent::reset()`. This is the same trait every built-in streaming indicator uses.
+**You can implement any streaming indicator yourself.** If the technical analysis the specification needs is not in the library, do not stop and do not ask for it. Implement the `StreamingIndicator` trait on your own struct inside `agent.rs`, store it on the agent, and reset it in `Agent::reset()`. This is exactly the trait every built-in streaming indicator uses, so your indicator behaves the same as the built-in ones. The trait needs three things:
+
+- `type Input`: what one update consumes (`f64`, `Ohlcv`, `TradeEvent`, or a small struct of your own).
+- `type Output<'a>`: what one update returns, usually `Option<T>` where `None` means "still warming up". It can be any type, for example a struct with several lines.
+- `update(&mut self, input)` and `reset(&mut self)`. `reset` must clear all history and keep the configuration.
+
+First check the quick reference in section 12b, because several common building blocks (RMA, rolling VWAP with bands, OBV RSI) already exist. A custom indicator needs `Debug` and `Clone` (the agent derives `Clone`), and must own its data (no references).
 
 For a fixed-size lookback window, `chapaty::ring_buffer::RingBuffer` (not in the prelude, import it by path) is ready to use: `RingBuffer::new(n)` panics on 0, `push(x)` returns the evicted oldest value once the buffer is full, `is_full()` tells you the window is warm, `iter()` visits the values (storage order, which is not oldest first after wrapping, so use it for order-independent work such as sums or extremes), and `clear()` empties it in `reset()`. A plain `VecDeque` as below is fine too.
 
