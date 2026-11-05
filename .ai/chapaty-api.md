@@ -885,14 +885,20 @@ First check the quick reference in section 12b, because several common building 
 
 For a fixed-size lookback window, `chapaty::ring_buffer::RingBuffer` (not in the prelude, import it by path) is ready to use: `RingBuffer::new(n)` panics on 0, `push(x)` returns the evicted oldest value once the buffer is full, `is_full()` tells you the window is warm, `iter()` visits the values (storage order, which is not oldest first after wrapping, so use it for order-independent work such as sums or extremes), and `clear()` empties it in `reset()`. A plain `VecDeque` as below is fine too.
 
+#### Per-update cost: choose the variant deliberately
+
+Every `update` runs once per data point, and we process millions of them (also inside grid searches). The cost of one `update` therefore matters. The example below shows the same indicator (rolling maximum) in two variants.
+
+**Variant A: simple scan, $O(w)$ per update ($w$ = window size).** It recomputes the maximum over the whole window on every tick. It is the easiest to read and, for small windows, often as fast as Variant B or faster, because the scan runs over contiguous memory with few branches. Use it only when the window is small (roughly 200 to 1000 elements) AND the work per element is trivial (comparisons, additions). It is a bad choice for large windows: with $w = 1{,}000{,}000$ every tick touches a million values.
+
 ```rust
 #[derive(Debug, Clone, Default)] // Clone is required, because the agent that stores it derives Clone
-struct RollingMax {
+struct RollingMaxScan {
     window: usize,
     buf: std::collections::VecDeque<f64>,
 }
 
-impl StreamingIndicator for RollingMax {
+impl StreamingIndicator for RollingMaxScan {
     type Input = f64;
     type Output<'a> = Option<f64>;
 
@@ -904,6 +910,7 @@ impl StreamingIndicator for RollingMax {
         if self.buf.len() < self.window {
             return None; // still warming up
         }
+        // O(w): visits the whole window on every tick
         self.buf.iter().copied().fold(None, |m, v| Some(m.map_or(v, |m: f64| m.max(v))))
     }
 
@@ -912,6 +919,60 @@ impl StreamingIndicator for RollingMax {
     }
 }
 ```
+
+**Variant B: monotonic deque, amortized $O(1)$ per update.** This is the classic LeetCode "sliding window maximum". The deque only holds candidates that can still become the maximum, with strictly decreasing values from front to back, so the front is always the current maximum. Every element is pushed once and popped at most once, hence amortized $O(1)$. A single update can still cost $O(w)$ in the worst case (a new large value clears the deque). Use this variant for large windows, for expensive per-element work, and whenever you are unsure.
+
+```rust
+#[derive(Debug, Clone, Default)] // Clone is required, because the agent that stores it derives Clone
+struct RollingMaxDeque {
+    window: usize,
+    n: usize, // number of values seen so far (= index of the next value)
+    buf: std::collections::VecDeque<(usize, f64)>, // (index, value), strictly decreasing from front to back
+}
+
+impl StreamingIndicator for RollingMaxDeque {
+    type Input = f64;
+    type Output<'a> = Option<f64>;
+
+    // NaN: comparisons with NaN are always false, so a NaN is never evicted by later
+    // values and breaks the monotonic invariant (results become wrong). If NaN can
+    // occur in the input, handle it explicitly (skip, reject or propagate) before
+    // it reaches this indicator.
+    fn update(&mut self, x: f64) -> Option<f64> {
+        // Remove dominated candidates from the back: they are older and not larger
+        // than x, so they can never be the maximum again.
+        while self.buf.back().is_some_and(|&(_, v)| v <= x) {
+            self.buf.pop_back();
+        }
+        self.buf.push_back((self.n, x));
+
+        // Remove candidates from the front that have left the window.
+        while self.buf.front().is_some_and(|&(i, _)| i + self.window <= self.n) {
+            self.buf.pop_front();
+        }
+
+        self.n += 1;
+        if self.n < self.window {
+            return None; // still warming up
+        }
+        // Values are decreasing, so the front is the maximum of the window.
+        self.buf.front().map(|&(_, v)| v)
+    }
+
+    fn reset(&mut self) {
+        self.buf.clear();
+        self.n = 0; // the index counter is part of the history
+    }
+}
+```
+
+**Which one do I use?**
+
+- Small window (roughly 200 to 1000) and trivial work per element: Variant A is fine and keeps the code simple.
+- Large window (thousands up to millions), expensive work per element (multiplications, divisions, `exp`/`ln`), or unknown window size (e.g. a parameter in a grid search): Variant B.
+- You cannot benchmark here, so do not guess. When in doubt, use Variant B.
+- The same rule applies to every indicator. Never recompute a sum, mean or extreme over the whole window on each tick if it can be maintained incrementally (running sum, monotonic deque, etc.). Rolling minimum is Variant B with `>=` instead of `<=`.
+- Validate `window > 0` in the constructor and return `Err(AgentError::InvalidInput(...).into())`. `Default` yields `window == 0`, which is meaningless.
 
 When you add a custom indicator, let the user know they can submit a pull request to the core `chapaty` library, or request it in the `#data-requests` channel on Discord, so everyone gets it.
 
