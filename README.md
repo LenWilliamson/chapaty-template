@@ -68,8 +68,9 @@ Need a different dataset or timeframe? Drop a request in the `#data-requests` ch
 
 Chapaty includes pre-calculated technical analysis out of the box, so your agents can focus on decision-making:
 
-- **Trend & Momentum:** SMA, EMA, RSI (Calculated on-the-fly via `StreamingSma`, `StreamingRsi`, etc.)
-- **Volume & Orderflow:** Volume Profile, TPO/Market Profile
+- **Trend & Momentum:** SMA, EMA, Wilder's RMA, RSI, Rate of Change (Calculated on-the-fly via `StreamingSma`, `StreamingEma`, `StreamingRma`, `StreamingRsi`, etc.)
+- **Volatility & VWAP:** ATR, session VWAP, rolling VWAP with deviation bands (`StreamingAtr`, `StreamingRollingOhlcvVwap`, etc.)
+- **Volume & Orderflow:** Volume Profile, TPO/Market Profile, On Balance Volume RSI (`StreamingObvRsi`)
 - **Contextual:** Economic Calendar events
 
 Need a specific indicator we don't have? Please open a **Feature Request** on the [Chapaty core repository][chapaty-repo-issues] (including the mathematical formula or reference implementation), or simply drop a request in the `#data-requests` channel on [Discord][discord].

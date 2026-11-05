@@ -65,24 +65,27 @@ src/
 │   └── trading/        Agent trait, Observation, Actions, Environment, config,
 │                       ledger, action space, and the trading state machine
 ├── indicator/
-│   ├── config.rs       window and smoothing settings (SmaWindow, EmaWindow, RsiWindow, AtrConfig, LookbackWindow)
-│   ├── batch/          pre-computed indicators. Configured in env(), O(1) access in act(), stateless.
+│   ├── config.rs       settings shared by batch and streaming: windows (SmaWindow, EmaWindow, RmaWindow,
+│   │                   RsiWindow, VwapWindow, LookbackWindow), configs (EmaConfig, RmaConfig, RsiConfig,
+│   │                   AtrConfig, RollingVwapConfig), and options (EwmSeed, RsiFlat, AtrSmoothingType, DeviationKind)
+│   ├── batch/          pre-computed indicators. Configured in env(), O(1) access in act(), fixed parameters.
 │   │   ├── ohlcv.rs    on candles: Sma, Ema, Rsi, Atr, RateOfChange, Vwap, OvernightRange
 │   │   ├── trades.rs   on raw trades: Vwap, OvernightRange
-│   │   └── event.rs    event-driven batch indicators
-│   └── streaming/      incremental indicators. Stored in the agent struct, updated every tick, stateful.
-│       ├── traits.rs           the StreamingIndicator trait every indicator implements
-│       ├── moving_averages.rs  StreamingSma, StreamingEma
-│       ├── oscillators.rs      StreamingRsi
+│   │   └── event.rs    the batch indicator ids (SmaId, EmaId, RsiId, AtrId, ...) and event types
+│   ├── streaming.rs    the StreamingIndicator trait every streaming indicator implements
+│   └── streaming/      incremental indicators. Stored in the agent struct, updated every bar, stateful.
+│       ├── moving_averages.rs  StreamingSma, StreamingEma, StreamingRma, StreamingEwm (shared base)
+│       ├── oscillators.rs      StreamingRsi, StreamingObvRsi
 │       ├── momentum.rs         StreamingRateOfChange
-│       ├── volatility.rs       StreamingAtr, StreamingOhlcvVwap, StreamingTradesVwap
+│       ├── volatility.rs       StreamingAtr, StreamingOhlcvVwap, StreamingTradesVwap,
+│       │                       StreamingRollingOhlcvVwap, StreamingRollingTradesVwap, VwapBands
 │       ├── swing.rs            StreamingHhll (higher highs / lower lows)
 │       ├── fair_value_gap.rs   StreamingFairValueGap
 │       ├── session.rs          StreamingOvernightRange
 │       └── timing.rs           StreamingTdSequential, StreamingTdXSequential
 ├── report/             read-only outputs: journal, leaderboard, equity curve,
 │                       cumulative returns, portfolio performance, trade statistics
-├── math/               accumulators and market profile (Volume Profile, TPO). Internal.
+├── math/               accumulators, deviation math, weighted windows, market profile (Volume Profile, TPO). Internal.
 ├── sim/                internal simulation engine. Rarely needed directly.
 ├── error.rs            ChapatyError and ChapatyResult
 ├── prelude.rs          the single glob import that brings in the common public API
@@ -90,7 +93,7 @@ src/
 └── sorted_vec_map.rs   ordered map helper used across the library
 ```
 
-**Key orientation rule:** if a strategy concept is stateless (SMA, ATR, ROC), check `indicator/batch/` first. A batch variant likely exists and is preferable. If it is stateful or sequential (FVG, HHLL, custom logic), use `indicator/streaming/`.
+**Key orientation rule:** if an indicator's parameters are swept in the grid search (for example the SMA period), use `indicator/streaming/`, because batch parameters are fixed when the environment is built. If the parameters are fixed for the whole run and a batch variant exists in `indicator/batch/`, batch is a good choice, especially with short episodes, because it has no per-episode warmup. Stateful or sequential concepts (FVG, HHLL, custom logic) are streaming only. Whatever you pick, check every streaming indicator's warmup against the episode length (`chapaty-api.md` section 5d).
 
 **Local:** `ls <CHAPATY_SRC>/indicator/streaming/` and `ls <CHAPATY_SRC>/indicator/batch/` to see the exact files currently in the library.
 

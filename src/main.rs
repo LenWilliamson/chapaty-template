@@ -103,9 +103,15 @@ async fn run() -> Result<()> {
 ///
 /// The estimated total runtime of a gridsearch is:
 /// `(single_agent_time * grid.len()) / cpu_cores`.
+///
+/// # Agent requirements
+///
+/// The grid search moves agents to worker threads, so an agent must own all of
+/// its data (`'static`). Store values, ids, and indicators on the agent, never
+/// references.
 async fn backtest<T>(env: &mut Environment, mut baseline: T, grid: Vec<(usize, T)>) -> Result<()>
 where
-    T: Agent + Send + Serialize,
+    T: Agent + Send + Serialize + 'static,
 {
     let label = baseline.identifier();
 

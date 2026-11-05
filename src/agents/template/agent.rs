@@ -87,9 +87,10 @@ pub struct TemplateAgent {
     // ------------------------------------------------------------------------------------------
     // Specification section 6: Parameters
     //
-    // Grid search parameters. These configure the agent's behaviour and are the only fields that
-    // are serialized. Every parameter here is read somewhere in the logic below, and replacing
-    // them with the parameters from your specification is the first change to make.
+    // Grid search parameters. These configure the agent's behaviour and are the
+    // only fields that are serialized. Every parameter here is read somewhere
+    // in the logic below, and replacing them with the parameters from your
+    // specification is the first change to make.
     // ------------------------------------------------------------------------------------------
     /// How long a trade may stay open before the exit rule closes it. Read in
     /// the `AgentState::InTrade` arm of `act()`.
@@ -99,9 +100,10 @@ pub struct TemplateAgent {
     /// `open_market()`.
     position_size: f64,
 
-    // Streaming indicators go here. Always `#[serde(skip)]`. Store the indicator's
-    // configuration as a grid parameter above, for example an SMA period, and rebuild the
-    // indicator from that parameter in the `with_*` methods.
+    // Streaming indicators go here. Always `#[serde(skip)]`. Store the
+    // indicator's configuration as a grid parameter above, for example an SMA
+    // period, and rebuild the indicator from that parameter in the `with_*`
+    // methods.
 
     // Trading state. Always `#[serde(skip)]`.
     #[serde(skip)]
@@ -109,8 +111,8 @@ pub struct TemplateAgent {
     #[serde(skip)]
     trade_counter: i64,
 
-    // Idempotency. One timestamp per data stream. A second OHLCV stream would add its own
-    // `last_processed_ts_2`. Always `#[serde(skip)]`.
+    // Idempotency. One timestamp per data stream. A second OHLCV stream would
+    // add its own `last_processed_ts_2`. Always `#[serde(skip)]`.
     #[serde(skip)]
     last_processed_ts: Option<DateTime<Utc>>,
 
@@ -310,12 +312,14 @@ impl Agent for TemplateAgent {
                 };
 
                 match (active_trade, decision) {
-                    // The trade is still open and our exit rule fired: close it.
+                    // The trade is still open and our exit rule fired: close
+                    // it.
                     (Some((_, state)), ExitDecision::Close) => {
                         self.state = AgentState::PostTrade;
                         Actions::from((market_id, self.close_market(state.trade_id())))
                     }
-                    // The engine already closed the trade on its stop loss or take profit.
+                    // The engine already closed the trade on its stop loss or
+                    // take profit.
                     (None, _) => {
                         self.state = AgentState::PostTrade;
                         Actions::no_op()

@@ -49,7 +49,7 @@ The `chapaty` engine is built for evaluating agents in parallel.
 Rewrite `spec.md` as a formal specification with these sections (in exactly this order):
 
 1. **Summary**: One paragraph overview.
-2. **Environment**: The chosen `EnvPreset` and why.
+2. **Environment**: The chosen `EnvPreset` (or hand-built `EnvConfig`) and why, the `EpisodeLength`, and the **warmup check**: list every streaming indicator with its warmup in bars and show that one episode contains clearly more bars of that stream (see `chapaty-api.md` section 5d). A failed check means the agent never trades, so fix the episode length or the indicator before approval.
 3. **Observation Inputs**: Which fields of `obs.market_view` (e.g., `ohlcv().rev_iter()`) and `obs.states` (e.g., `iter_live()`) you will read.
 4. **Entry Logic**: Plain English / pseudocode (no Rust yet).
 5. **Exit Logic**: Plain English / pseudocode (no Rust yet).
@@ -182,4 +182,5 @@ _Note for LLM: If `make run` throws a Python error because `journal.csv` is miss
    };
    ```
    Do not blindly fire market orders without checking if price data exists; otherwise, it will be rejected as an invalid action.
-6. **Python Visualization is Off-Limits:** Do not modify `visualization/generate_tearsheet.py`. It defensively handles `groupby("date")` logic for EOD downsampling. Leave it exactly as is.
+6. **Streaming warmup must fit in one episode:** The agent's `reset()` runs at every episode boundary and clears every streaming indicator. If an indicator's warmup is longer than one episode (for example an EMA(20) on daily candles with `EpisodeLength::Day`), it never produces a value, the agent never trades, and the run still finishes without an error. Check this in the spec (Phase 3, section 2) and again before handoff.
+7. **Python Visualization is Off-Limits:** Do not modify `visualization/generate_tearsheet.py`. It defensively handles `groupby("date")` logic for EOD downsampling. Leave it exactly as is.
