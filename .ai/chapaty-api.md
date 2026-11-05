@@ -619,16 +619,15 @@ journal.trade_stats()?.to_file_sync(&cfg)?;
 **Grid axis boundary (must follow):**
 
 - `GridAxis::new(start, end, step)` takes string arguments, returns `ChapatyResult`, and `.generate()` returns `Vec<f64>`. Use it only for float ranges.
-- Use standard iterators (`start..=end`, arrays, `Vec`) for integer and categorical axes.
-- **The end of an axis is exclusive.** This holds for `GridAxis` and for the Rust range `a..b`. The most common mistake is a sweep that silently misses its top value. For integers write the inclusive range `a..=b`.
-- **For a `GridAxis`, end half a step beyond the last value you want.** `GridAxis` produces `ceil((end - start) / step)` values, so floating point rounding can make the `end` value itself appear. For example `GridAxis::new("0.2", "0.8", "0.2")` generates `0.2, 0.4, 0.6, 0.8`, and `end = last + step` leaks this way often. A half step is safe against rounding in both directions.
+- **A `GridAxis` includes both `start` and `end`**, like reading "from 0.8 to 2.0 in steps of 0.1". Floating point rounding is handled for you. If `end` does not lie on the grid, the last value is the largest step below it. `new` returns an error when `step <= 0` or `end < start`.
+- Use standard iterators (`start..=end`, arrays, `Vec`) for integer and categorical axes. **Careful: the Rust range `a..b` excludes `b`.** Write the inclusive range `a..=b`, otherwise the sweep silently misses its top value.
 
 ```rust
-// DO: float axis via GridAxis. Values: 0.8, 0.9, ..., 2.0 (last wanted 2.0, end = 2.0 + 0.05)
-let sl_values = GridAxis::new("0.8", "2.05", "0.1")?.generate();
+// DO: float axis via GridAxis. Values: 0.8, 0.9, ..., 2.0 (both ends included)
+let sl_values = GridAxis::new("0.8", "2.0", "0.1")?.generate();
 // DO: integer axis via iterators. Values: 14, 16, ..., 60 (inclusive range)
 let lookbacks: Vec<usize> = (14..=60).step_by(2).collect();
-// `(14..60)` would stop at 58: the end is exclusive.
+// `(14..60)` would stop at 58, because `a..b` excludes `b`.
 // DON'T: GridAxis for integer-only ranges
 ```
 
@@ -636,7 +635,7 @@ let lookbacks: Vec<usize> = (14..=60).step_by(2).collect();
 use itertools::iproduct;
 
 pub fn build(self) -> ChapatyResult<Vec<(usize, MyAgent)>> {
-    let sl_mults = GridAxis::new("0.8", "2.05", "0.1")?.generate(); // floats 0.8..=2.0
+    let sl_mults = GridAxis::new("0.8", "2.0", "0.1")?.generate(); // floats 0.8..=2.0
     let lookbacks: Vec<i64> = vec![14, 20, 30, 45, 60];            // ints
 
     Ok(iproduct!(sl_mults, lookbacks)

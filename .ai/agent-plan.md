@@ -43,7 +43,7 @@ The `chapaty` engine is built for evaluating agents in parallel.
 - The Agent struct must derive `Clone, Serialize, Debug`.
 - **Hard rule:** Numeric float axes use `GridAxis`; integer axes use standard iterator/range patterns; categorical sets use explicit `Vec`/array values.
 - **GridAxis is for float ranges; integer grids should use standard iterators.**
-- **Axis ends are exclusive.** The Rust range `a..b` excludes `b`, so use `a..=b` for integers. A `GridAxis` also treats its `end` as exclusive, but floating point rounding can make the end value appear, so set the end half a step beyond the last value you want, for example `GridAxis::new("0.8", "2.05", "0.1")` for 0.8 to 2.0 (see `chapaty-api.md` section 10). State the real first and last grid values in the spec's Parameters table so the user can check them.
+- **Axis ends:** a `GridAxis` includes both ends, so `GridAxis::new("0.8", "2.0", "0.1")` gives 0.8 to 2.0. The Rust range `a..b` excludes `b`, so use `a..=b` for integers (see `chapaty-api.md` section 10). State the real first and last grid values in the spec's Parameters table so the user can check them.
 
 ## Phase 3: Rewrite Spec & Halt
 
