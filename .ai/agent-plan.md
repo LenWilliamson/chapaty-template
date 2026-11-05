@@ -12,7 +12,7 @@ If the user pastes a trading strategy directly into the chat but has not created
 2. Create the spec: `touch src/agents/<strategy_name>/spec.md`
 3. Paste their idea into the `spec.md` file.
 
-If the user is completely stuck and doesn't know what to build, guide them to `.ai/algorithm-ideas.md` to pick a seed strategy.
+If the user is completely stuck and doesn't know what to build, point them to https://github.com/LenWilliamson/chapaty-garden, a collection of example strategies. Browse it to find a seed idea, then help them adapt it into a `spec.md`. If it is unreachable, help them brainstorm a simple strategy instead (e.g. a moving-average crossover or breakout).
 
 **When registering a new agent in `main.rs`, only add — never remove.** The `ActiveAgent` enum lists every agent the user has built; previous variants and their match arms must remain intact so the user can switch back by changing a single line. Do not "clean up" inactive variants. If an unused-import warning fires for an agent that is not currently selected, leave it — the next switch will silence it.
 
@@ -43,13 +43,14 @@ The `chapaty` engine is built for evaluating agents in parallel.
 - The Agent struct must derive `Clone, Serialize, Debug`.
 - **Hard rule:** Numeric float axes use `GridAxis`; integer axes use standard iterator/range patterns; categorical sets use explicit `Vec`/array values.
 - **GridAxis is for float ranges; integer grids should use standard iterators.**
+- **Axis ends:** a `GridAxis` includes both ends, so `GridAxis::new("0.8", "2.0", "0.1")` gives 0.8 to 2.0. The Rust range `a..b` excludes `b`, so use `a..=b` for integers (see `chapaty-api.md` section 10). State the real first and last grid values in the spec's Parameters table so the user can check them.
 
 ## Phase 3: Rewrite Spec & Halt
 
 Rewrite `spec.md` as a formal specification with these sections (in exactly this order):
 
 1. **Summary**: One paragraph overview.
-2. **Environment**: The chosen `EnvPreset` and why.
+2. **Environment**: The chosen `EnvPreset` (or hand-built `EnvConfig`) and why, the `EpisodeLength`, and the **warmup check**: list every streaming indicator with its warmup in bars and show that one episode contains clearly more bars of that stream (see `chapaty-api.md` section 5d). A failed check means the agent never trades, so fix the episode length or the indicator before approval.
 3. **Observation Inputs**: Which fields of `obs.market_view` (e.g., `ohlcv().rev_iter()`) and `obs.states` (e.g., `iter_live()`) you will read.
 4. **Entry Logic**: Plain English / pseudocode (no Rust yet).
 5. **Exit Logic**: Plain English / pseudocode (no Rust yet).
@@ -157,7 +158,7 @@ _Note for LLM: If `make run` throws a Python error because `journal.csv` is miss
 
 ## Hard Engine Rules & Constraints
 
-1. **Never invent `chapaty` types.** If `.ai/chapaty-api.md` doesn't cover what you need, read the source directly from `~/.cargo/registry/src/chapaty-<VERSION>/src/` (resolve the version first via `cargo metadata`). Only ask the user if the source is unavailable.
+1. **Never invent `chapaty` types.** The exception is indicators: if the spec needs a technical indicator the library does not have, write it yourself by implementing the `StreamingIndicator` trait in `agent.rs` (see `chapaty-api.md` section 12c). Do not stop and do not ask the user to wait for a library release. For everything else, if `.ai/chapaty-api.md` doesn't cover what you need, read the source directly from `~/.cargo/registry/src/chapaty-<VERSION>/src/` (resolve the version first via `cargo metadata`). Only ask the user if the source is unavailable.
 
    **Source resolution order (must follow):**
    1. If local IDE/CLI access exists: inspect local Cargo registry first (`~/.cargo/registry/.../chapaty-*`) and current workspace files.
@@ -182,4 +183,5 @@ _Note for LLM: If `make run` throws a Python error because `journal.csv` is miss
    };
    ```
    Do not blindly fire market orders without checking if price data exists; otherwise, it will be rejected as an invalid action.
-6. **Python Visualization is Off-Limits:** Do not modify `visualization/generate_tearsheet.py`. It defensively handles `groupby("date")` logic for EOD downsampling. Leave it exactly as is.
+6. **Streaming warmup must fit in one episode:** The agent's `reset()` runs at every episode boundary and clears every streaming indicator. If an indicator's warmup is longer than one episode (for example an EMA(20) on daily candles with `EpisodeLength::Day`), it never produces a value, the agent never trades, and the run still finishes without an error. Check this in the spec (Phase 3, section 2) and again before handoff.
+7. **Python Visualization is Off-Limits:** Do not modify `visualization/generate_tearsheet.py`. It defensively handles `groupby("date")` logic for EOD downsampling. Leave it exactly as is.

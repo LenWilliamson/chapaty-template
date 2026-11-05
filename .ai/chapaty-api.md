@@ -10,7 +10,7 @@ Always start agent files and runners with the prelude:
 use chapaty::prelude::*;
 ```
 
-This brings in the core traits and states (`Agent`, `Environment`, `Observation`, `Actions`), action commands (`OpenCmd`, `MarketCloseCmd`, `ModifyCmd`, `CancelCmd`), strong primitives (`Price`, `Quantity`, `Tick`, `Volume`, `TradeId`), queries and their stream IDs (`OhlcvSpotQuery` and `OhlcvId`, and so on), config and filter types (`EnvConfig`, `FilterConfig`, `EpisodeLength`, `DataSource`), domain enums (`Symbol`, `SpotPair`, `Period`, `DataBroker`, `Exchange`), batch indicator IDs and configs (`SmaId`, `AtrId`, `SmaWindow`, `AtrConfig`, `SessionCfg`), streaming indicators and their trait (`StreamingSma`, `StreamingIndicator`), errors (`ChapatyResult`, `ChapatyError`, `AgentError`), and I/O configs (`FileConfig`, `IoConfig`, `StorageLocation`).
+This brings in the core traits and states (`Agent`, `Environment`, `Observation`, `Actions`), action commands (`OpenCmd`, `MarketCloseCmd`, `ModifyCmd`, `CancelCmd`), strong primitives (`Price`, `Quantity`, `Tick`, `Volume`, `TradeId`), queries and their stream IDs (`OhlcvSpotQuery` and `OhlcvId`, and so on), config and filter types (`EnvConfig`, `FilterConfig`, `EpisodeLength`, `DataSource`), domain enums (`Symbol`, `SpotPair`, `Period`, `DataBroker`, `Exchange`), batch indicator IDs (`SmaId`, `EmaId`, `RsiId`, `AtrId`, `OhlcvSessionId`), indicator configs shared by batch and streaming (`SmaWindow`, `EmaConfig`, `RsiConfig`, `RmaConfig`, `AtrConfig`, `RollingVwapConfig`, `SessionCfg`, `EwmSeed`, `RsiFlat`, `DeviationKind`), streaming indicators and their trait (`StreamingSma`, `StreamingRsi`, `StreamingRollingOhlcvVwap`, `StreamingIndicator`, and more, see section 12b), errors (`ChapatyResult`, `ChapatyError`, `AgentError`), and I/O configs (`FileConfig`, `IoConfig`, `StorageLocation`).
 
 _Tip: read `src/agents/demo/agent.rs` in this repository for a complete, simple reference implementation._
 
@@ -31,6 +31,22 @@ async fn environment() -> ChapatyResult<Environment> {
 
 - `chapaty::make(cfg)` builds an environment by fetching data from the configured `DataSource` (the hosted API or your self-hosted gRPC endpoint). Use this for any hand-built `EnvConfig`.
 - `chapaty::load(cfg, &io_cfg)` first tries to read a cached dataset from storage (for example a published Hugging Face file), and falls back to `make` on a cache miss. Both accept anything that is `Into<EnvConfig>`, which includes `EnvPreset` and a raw `EnvConfig`.
+
+**A preset is just an `EnvConfig`.** `EnvConfig::from(preset)` (or `preset.into()`) gives you the full config, which you can adjust with the builder methods from section 5b and pass to either function:
+
+```rust
+// Path B: start from a preset, change one setting, build it from the data source
+async fn environment() -> ChapatyResult<Environment> {
+    let cfg = EnvConfig::from(EnvPreset::BinanceBtcUsdt1d)
+        .with_episode_length(EpisodeLength::Annual);
+    chapaty::make(cfg).await
+}
+```
+
+Facts to get right when you mix presets with `make` and `load`:
+
+- Every preset uses `DataSource::Hosted`. So `chapaty::make(EnvPreset::...)`, with or without changes, fetches from the hosted API and needs `CHAPATY_CREDENTIAL` (see section 5b). Only Path A (`load` with the preset's file stem) works without a credential.
+- On a cache hit, `load` picks the file by its file stem and does **not** check that the file matches your config. Settings that do not change the data are taken from your config: episode length, trade hint, invalid action penalty, and risk metrics. Settings that change the data are **silently ignored**: queries, batch indicators, and filters. To change those, use `make`, not `load` with the preset's file stem.
 
 ## 2. Strong Domain Types (Newtypes)
 
@@ -191,14 +207,22 @@ let filter = FilterConfig {
 
 ### 5d. Episode length and the warmup trap (read this)
 
-`EpisodeLength` decides how often the engine resets the episode. On every reset, your agent's `reset()` runs, which resets every streaming indicator it holds. Variants: `Day`, `Week`, `Month`, `Quarter`, `SemiAnnual`, `Annual`, `Infinite` (default). Within one episode the agent only ever sees that episode's candles.
+`EpisodeLength` decides how often the engine resets the episode. On every reset, your agent's `reset()` runs, which resets every streaming indicator it holds. Variants: `Day`, `Week`, `Month`, `Quarter`, `SemiAnnual`, `Annual`, `Infinite` (default).
 
-**The classic "my SMA strategy makes zero trades" bug.** If you run a **streaming** SMA(20) on daily candles with `EpisodeLength::Day`, the indicator resets at the end of every day. Each new day it starts cold and needs 20 daily candles to warm up, but the day ends long before that. It returns `None` forever, so you never trade. The same happens for any streaming indicator whose warmup is longer than the episode.
+The market view is **not** cleared between episodes: `get_slice`, `rev_iter`, and `last_event` still see all history up to the current step. What starts from zero at each episode is the state your agent holds, including every streaming indicator.
 
-Two fixes:
+**The classic "my strategy makes zero trades" bug.** If you run a **streaming** EMA(20) on daily (end of day) candles with `EpisodeLength::Day`, each episode contains about one candle. The agent's `reset()` clears the EMA at every episode boundary, so it starts cold every day and needs 20 candles, but it only ever gets one. It returns `None` forever, so you never trade, and the run still finishes without an error. The same happens for any streaming indicator whose warmup is longer than the episode.
+
+**Always run this check before choosing an `EpisodeLength`:**
+
+1. Work out the warmup of every streaming indicator in bars (see the table in section 12b, for example 20 bars for EMA(20) or 15 bars for RSI(14)).
+2. Work out how many bars of the stream that feeds it one episode contains. Count only bars that survive the filters: trading hours and news filters remove bars. For example, `Day` on 1m crypto candles is about 1440 bars, but `Day` on daily candles is 1 bar.
+3. The longest warmup must be clearly smaller than the bars per episode. Otherwise the indicator never produces a value, or only produces one late in each episode.
+
+Two fixes when the check fails:
 
 1. Pick an `EpisodeLength` that comfortably exceeds your longest warmup. For a 20-day or 30-day streaming lookback use `Annual` or `Infinite`. `LookbackWindow::Bars(n)` warms in `n` candles; `LookbackWindow::Time(d)` warms only after the buffer spans the full duration `d`.
-2. Or use the **batch** version of the indicator instead. Batch indicators are precomputed once over the entire dataset and are not reset per episode, so they never suffer this warmup problem. This is often the better choice for stateless indicators (SMA, EMA, ATR, ROC, RSI, session ranges) on short episodes. See section 12.
+2. Or use the **batch** version of the indicator, if one exists and its parameters are not swept in the grid (see section 12a). Batch indicators are computed once at build time on the whole fetched series, and episodes only slice the precomputed result, so they are never reset. They warm up only once, at the start of the data. The years filter is applied when the data is fetched, before the indicators are computed. The trading hours and news filters are applied after, so they do not interrupt the warmup.
 
 ## 6. Risk Management & The `Instrument` Trait
 
@@ -217,7 +241,8 @@ let sl_price = Price(entry_price.0 - risk_distance.0);    // long position
 
 Agents are stateful structs evaluated in parallel grid searches.
 
-- **Required derives:** `#[derive(Debug, Clone, Copy, Serialize)]`.
+- **Required derives:** `#[derive(Debug, Clone, Serialize)]`. Do not add `Copy`: most streaming indicators are not `Copy`, so an agent holding one cannot be either.
+- **Own your data:** `evaluate_agents` moves agents to worker threads and requires `T: Agent + Send + Serialize + 'static`. Store owned values (numbers, ids, `Arc`, indicators) on the agent, never references. This is one more reason for the no-lifetimes rule in `rust-vibe-rules.md`.
 - **Internal state:** mark it `#[serde(skip)]`. Prefer enums for complex states over several booleans.
 - **Trade identification:** keep an internal `trade_counter: i64` and assign a unique `TradeId(self.trade_counter)` to each order. It must be unique per episode. Increment it before every `OpenCmd`, and reset it to `0` in `reset()`.
 - **`reset()`:** reset plain state and call `.reset()` on every streaming indicator you hold. Never rebuild an indicator here (see section 12b).
@@ -419,7 +444,7 @@ Use `exit_reason()` when you want to react to how the last trade ended, for exam
 
 ### Key event payloads
 
-- **`Ohlcv`**: `.open`, `.high`, `.low`, `.close` (all `Price`), `.volume` (`Volume`), `.open_timestamp`, `.close_timestamp` (`DateTime<Utc>`). Helper `.direction()` returns `CandleDirection::{Bullish, Bearish, Doji}`.
+- **`Ohlcv`**: `.open`, `.high`, `.low`, `.close` (all `Price`), `.volume` (`Volume`), `.open_timestamp`, `.close_timestamp` (`DateTime<Utc>`). Helper `.direction()` returns `CandleDirection::{Bullish, Bearish, Doji}`. Helper `.aggregated_price(AggregatedPrice::Hlc3)` returns the bar's typical price as a `Price` (also `Hl2`, `Ohlc4`, `Close`). `Ohlcv` is `Copy`, so pass `*candle` where an indicator takes an `Ohlcv` by value.
 - **`TradeEvent`**: `.price` (`Price`), `.quantity` (`Quantity`), `.is_buyer_maker` (`Option<LiquiditySide>`). This is a raw market execution, not your own trade.
 - **`EconomicEvent`**: `.timestamp`, `.actual`, `.forecast`, `.previous` (all `Option<EconomicValue>`), `.economic_impact` (`EconomicEventImpact`).
 - **`VolumeProfile` and `Tpo`**: `.poc`, `.value_area_high`, `.value_area_low` (all `Price`).
@@ -480,6 +505,19 @@ let actions: Actions = candidates
     .map(|cmd| (market_id, Action::Open(cmd)))
     .collect();
 ```
+
+**Merging batches with `extend`.** `Actions` implements the standard `Extend` trait twice: for `(MarketId, Action)` pairs and for whole `Actions` batches. This is handy when helpers build their own batches independently, for example one for the long side and one for the short side:
+
+```rust
+// Merge whole batches. `extend` takes any iterator, so wrap a single batch in an array.
+let mut actions = short_exit.actions;
+actions.extend([long_exit.actions]);
+
+// Append single commands.
+actions.extend([(market_id, first_action), (market_id, second_action)]);
+```
+
+`extend` changes the batch in place and returns `()`. Writing `let mut actions = a.extend([b]);` compiles to an `actions` of type `()`, and the next use fails with "expected `Actions`, found `()`". Bind the batch first, then call `extend` on it. Merging never drops a command: commands for the same market are appended, and the engine still orders them as described in section 9b.
 
 `any_open_action(&market_id)` tells you whether a batch already contains an open command for a market. This is useful when one agent wraps others and has to resolve conflicting signals.
 
@@ -580,14 +618,16 @@ journal.trade_stats()?.to_file_sync(&cfg)?;
 
 **Grid axis boundary (must follow):**
 
-- `GridAxis::new(start, end, step)` takes string arguments, returns `ChapatyResult`, and `.generate()` returns `Vec<f64>` with the end exclusive. Use it only for float ranges.
-- Use standard iterators (`start..=end`, arrays, `Vec`) for integer and categorical axes.
+- `GridAxis::new(start, end, step)` takes string arguments, returns `ChapatyResult`, and `.generate()` returns `Vec<f64>`. Use it only for float ranges.
+- **A `GridAxis` includes both `start` and `end`**, like reading "from 0.8 to 2.0 in steps of 0.1". Floating point rounding is handled for you. If `end` does not lie on the grid, the last value is the largest step below it. `new` returns an error when `step <= 0` or `end < start`.
+- Use standard iterators (`start..=end`, arrays, `Vec`) for integer and categorical axes. **Careful: the Rust range `a..b` excludes `b`.** Write the inclusive range `a..=b`, otherwise the sweep silently misses its top value.
 
 ```rust
-// DO: float axis via GridAxis
-let sl_values = GridAxis::new("0.8", "2.1", "0.1")?.generate(); // end exclusive
-// DO: integer axis via iterators
+// DO: float axis via GridAxis. Values: 0.8, 0.9, ..., 2.0 (both ends included)
+let sl_values = GridAxis::new("0.8", "2.0", "0.1")?.generate();
+// DO: integer axis via iterators. Values: 14, 16, ..., 60 (inclusive range)
 let lookbacks: Vec<usize> = (14..=60).step_by(2).collect();
+// `(14..60)` would stop at 58, because `a..b` excludes `b`.
 // DON'T: GridAxis for integer-only ranges
 ```
 
@@ -595,7 +635,7 @@ let lookbacks: Vec<usize> = (14..=60).step_by(2).collect();
 use itertools::iproduct;
 
 pub fn build(self) -> ChapatyResult<Vec<(usize, MyAgent)>> {
-    let sl_mults = GridAxis::new("0.8", "2.1", "0.1")?.generate(); // floats
+    let sl_mults = GridAxis::new("0.8", "2.0", "0.1")?.generate(); // floats 0.8..=2.0
     let lookbacks: Vec<i64> = vec![14, 20, 30, 45, 60];            // ints
 
     Ok(iproduct!(sl_mults, lookbacks)
@@ -631,14 +671,31 @@ let journal = env.journal()?;
 
 Chapaty has two indicator systems. Choosing the right one matters for performance and correctness.
 
-### 12a. Batch Indicators (preferred when applicable)
+**Which one to use.** The deciding question is whether the indicator's parameters are swept in the grid search:
+
+- **Parameters swept per agent** (for example the SMA period is a grid parameter): use **streaming**. A batch indicator's parameters are fixed when the environment is built, so every agent in the grid would read the same values. This is the common case for grid searches.
+- **Parameters fixed for the whole run, and a batch version exists:** batch is a good choice, especially with short episodes, because it has no per-episode warmup (see section 5d).
+- **No batch version exists:** use streaming. The newer indicators (RMA, OBV RSI, rolling VWAP with bands) are streaming only. If no built-in streaming indicator fits either, write your own by implementing the `StreamingIndicator` trait (section 12c).
+
+### 12a. Batch Indicators (fixed parameters, no per-episode warmup)
 
 Batch indicators are precomputed at environment build time over the whole dataset. In `act()` reading them is O(1) and needs no agent state, and they are not reset per episode (so no warmup trap).
 
 **Add them to a query** by pushing onto its `indicators` field, or with `.with_indicator(...)` / `.with_indicators(...)` from the `WithBatchIndicators` trait.
 
-`BatchOhlcvIndicator` variants and their config types: `Ema(EmaWindow)`, `Sma(SmaWindow)`, `Rsi(RsiWindow)`, `Atr(AtrConfig)`, `RateOfChange(LookbackWindow)`, `Vwap(AggregatedPrice)`, `OvernightRange(SessionCfg)`.
-`BatchTradesIndicator` variants: `Vwap(AggregatedPrice)`, `OvernightRange(SessionCfg)`.
+`BatchOhlcvIndicator` variants and their config types: `Ema(EmaConfig)`, `Sma(SmaWindow)`, `Rsi(RsiConfig)`, `Atr(AtrConfig)`, `RateOfChange(LookbackWindow)`, `Vwap(AggregatedPrice)`, `OvernightRange(SessionCfg)`.
+`BatchTradesIndicator` variants: `Vwap`, `OvernightRange(SessionWindow)`.
+
+Batch and streaming EMA, RSI, and ATR take the same config type, so the same settings give the same values in both. Build the configs with their constructors, which pick the defaults:
+
+```rust
+let ema = EmaConfig::new(EmaWindow(20));                 // seed: EwmSeed::FirstValue
+let rsi = RsiConfig::new(RsiWindow(14));                 // seed: FirstValue, flat: RsiFlat::Neutral
+let atr = AtrConfig::new(14);                            // smoothing: AtrSmoothingType::Rma(EwmSeed::FirstValue)
+let atr_sma = AtrConfig::new(14).with_smoothing(AtrSmoothingType::Sma);
+```
+
+`AtrSmoothingType` variants: `Rma(EwmSeed)` (Wilder's smoothing), `Sma`, `Ema(EwmSeed)`. See section 12b for `EwmSeed` and `RsiFlat`.
 
 These variants are the ground truth. Before assuming an indicator does not exist, read `indicator/batch/ohlcv.rs` or `indicator/batch/trades.rs`.
 
@@ -661,8 +718,8 @@ let query = OhlcvSpotQuery {
 | Indicator     | ID struct        | Fields                               | Accessor           | Event type     | Value field                        |
 | ------------- | ---------------- | ------------------------------------ | ------------------ | -------------- | ---------------------------------- |
 | SMA           | `SmaId`          | `parent`, `length: SmaWindow`        | `.sma()`           | `Sma`          | `.price: Price`                    |
-| EMA           | `EmaId`          | `parent`, `length: EmaWindow`        | `.ema()`           | `Ema`          | `.price: Price`                    |
-| RSI           | `RsiId`          | `parent`, `length: RsiWindow`        | `.rsi()`           | `Rsi`          | `.price: Price`                    |
+| EMA           | `EmaId`          | `parent`, `cfg: EmaConfig`           | `.ema()`           | `Ema`          | `.price: Price`                    |
+| RSI           | `RsiId`          | `parent`, `cfg: RsiConfig`           | `.rsi()`           | `Rsi`          | `.price: Price`                    |
 | ATR           | `AtrId`          | `parent`, `cfg: AtrConfig`           | `.atr()`           | `Atr`          | `.range: PriceDelta` (NOT `price`) |
 | ROC           | `RocId`          | `parent`, `lookback: LookbackWindow` | `.roc()`           | `Roc`          | `.percentage: f64`                 |
 | Session range | `OhlcvSessionId` | `parent`, `cfg: SessionCfg`          | `.ohlcv_session()` | `OhlcvSession` | `.high`, `.low: Price`             |
@@ -675,6 +732,11 @@ let sma_id = SmaId { parent: ohlcv_id, length: SmaWindow(20) };
 if let Some(sma) = obs.market_view.sma().last_event(&sma_id) {
     let value: f64 = sma.price.0;
 }
+
+// The id must carry exactly the config you put on the query, including seed and flat.
+let rsi_cfg = RsiConfig::new(RsiWindow(14));
+// on the query: indicators: vec![BatchOhlcvIndicator::Rsi(rsi_cfg)]
+let rsi_id = RsiId { parent: ohlcv_id, cfg: rsi_cfg };
 ```
 
 **Session ranges: batch vs streaming.** A `SessionCfg` is `{ window: SessionWindow, price_aggregation: AggregatedPrice }`. `SessionWindow` has ready-made presets (`us_core_session()`, `us_overnight()`, `us_extended_overnight()`, `london_core_session()`, and more) or `SessionWindow::new(timezone, start, end)`.
@@ -694,7 +756,7 @@ if let Some(s) = obs.market_view.ohlcv_session().last_event(&session_id) {
 
 Use the **batch** `OvernightRange` when the session config is fixed for the run. Use the **streaming** `StreamingOvernightRange` (stored on the agent, updated each candle) when the session parameters vary per grid agent, since changing a batch parameter means rebuilding the environment.
 
-### 12b. Streaming Indicators (use when batch is not applicable)
+### 12b. Streaming Indicators (per-agent parameters, the common case)
 
 All streaming indicators implement one trait. Store the indicator on the agent (`#[serde(skip)]`), call `.update(input)` once per new candle, and `.reset()` at the start of an episode. `update` returns a borrowed `Output`, usually `Option<T>`, which is `None` until the indicator warms up.
 
@@ -720,7 +782,55 @@ pub trait StreamingIndicator: Debug + Send + Sync {
 
 > **GOTCHA: episode length is a hard floor on warmup.** See section 5d. A streaming indicator can never warm up across more time than one episode spans. If the warmup exceeds the episode you get zero trades, every episode, forever. Use a longer `EpisodeLength` or the batch version.
 
+> **GOTCHA: a window of 0 panics.** Every window type (`SmaWindow`, `EmaWindow`, `RmaWindow`, `RsiWindow`, `VwapWindow`) wraps a `u16`, and every constructor panics on 0, as does `AtrConfig::new(0)`. Start integer grid axes at 1 or higher.
+
 Read the source of each indicator (`indicator/streaming/<name>.rs`) for exact builder methods and accessors. Documented below is only what a signature does not reveal.
+
+#### Quick reference: moving averages, oscillators, volatility
+
+`update` returns `None` until the indicator has seen its warmup. Count the warmup in bars of the stream you feed it, and check it against the episode length (section 5d).
+
+| Indicator                    | Constructor                                                              | `update(...)` input | Output               | Warmup                    |
+| ---------------------------- | ------------------------------------------------------------------------ | ------------------- | -------------------- | ------------------------- |
+| `StreamingSma`               | `StreamingSma::new(SmaWindow(n))`                                        | `f64`               | `Option<f64>`        | n bars                    |
+| `StreamingEma`               | `StreamingEma::new(EmaConfig::new(EmaWindow(n)))`                        | `f64`               | `Option<f64>`        | n bars                    |
+| `StreamingRma`               | `StreamingRma::new(RmaConfig::new(RmaWindow(n)))`                        | `f64`               | `Option<f64>`        | n bars                    |
+| `StreamingRsi`               | `StreamingRsi::new(RsiConfig::new(RsiWindow(n)))`                        | `f64`               | `Option<f64>`, 0-100 | n + 1 bars                |
+| `StreamingObvRsi`            | `StreamingObvRsi::new(RsiConfig::new(RsiWindow(n)))`                     | `Ohlcv`             | `Option<f64>`, 0-100 | n + 1 bars                |
+| `StreamingAtr`               | `StreamingAtr::new(AtrConfig::new(n))`                                   | `Ohlcv`             | `Option<f64>`        | n bars                    |
+| `StreamingOhlcvVwap`         | `StreamingOhlcvVwap::new(AggregatedPrice::Hlc3)`                         | `Ohlcv`             | `Option<f64>`        | first bar with volume     |
+| `StreamingTradesVwap`        | `StreamingTradesVwap::new()`                                             | `TradeEvent`        | `Option<f64>`        | first trade with quantity |
+| `StreamingRollingOhlcvVwap`  | `StreamingRollingOhlcvVwap::new(RollingVwapConfig::new(VwapWindow(n)))`  | `Ohlcv`             | `Option<VwapBands>`  | n bars                    |
+| `StreamingRollingTradesVwap` | `StreamingRollingTradesVwap::new(RollingVwapConfig::new(VwapWindow(n)))` | `TradeEvent`        | `Option<VwapBands>`  | n trades                  |
+
+What the names and configs mean:
+
+- **RMA** is Wilder's running moving average: each new value has weight `1/n`. RSI and the default ATR smoothing are built on it. **EMA** uses weight `2/(n+1)`.
+- **`EwmSeed`** decides how EMA and RMA (and RSI and ATR on top of them) compute their first value: `FirstValue` (default) starts from the first input, `Sma` starts from the plain average of the first n inputs, which is Wilder's original definition. Set it with `.with_seed(EwmSeed::Sma)` on `EmaConfig`, `RmaConfig`, or `RsiConfig`, and inside `AtrSmoothingType::Rma(...)` or `Ema(...)`. The warmup is the same, only the early values differ.
+- **`RsiFlat`** is the RSI value when the window had no movement at all (average gain and loss both 0): `Neutral` (50, default), `Zero` (0), `Max` (100), or `Undefined` (`None`). Set it with `.with_flat(...)` on `RsiConfig`.
+- **`StreamingObvRsi`** is an RSI of On Balance Volume: a bar's volume counts as a gain when its close is above the previous close, as a loss when it is below, and as neither when unchanged.
+- **Cumulative vs rolling VWAP:** `StreamingOhlcvVwap` and `StreamingTradesVwap` accumulate everything since they were last reset, which is the episode start when your agent's `reset()` calls their `.reset()`. The rolling versions only use the last n bars or trades and also measure the spread around the VWAP.
+- **`VwapBands`** is `{ basis: Price, deviation: PriceDelta }`. `bands.upper(mult)` and `bands.lower(mult)` return `basis ± mult * deviation` as a `Price`, so one indicator serves any number of band pairs. Keep the multipliers as agent parameters.
+- **`DeviationKind`** (set with `RollingVwapConfig::new(..).with_deviation(...)`): `MeanAbsolute` (default) or `StdDev` (population standard deviation). Both are volume weighted.
+- **`StreamingRollingOhlcvVwap`** weights `AggregatedPrice::Hlc3` by default. Use `.with_aggregated_price(AggregatedPrice::Close)` for the close. A bar with zero, negative, or non-finite volume keeps its slot in the window with weight 0. The output stays `None` while no bar in the window has volume.
+
+```rust
+// Build from grid parameters (u16 windows), for example in `new()` or a `with_*` method.
+let rsi = StreamingRsi::new(RsiConfig::new(RsiWindow(14)));
+let obv_rsi = StreamingObvRsi::new(RsiConfig::new(RsiWindow(5)).with_seed(EwmSeed::Sma));
+let vwap = StreamingRollingOhlcvVwap::new(
+    RollingVwapConfig::new(VwapWindow(60)).with_deviation(DeviationKind::StdDev),
+)
+.with_aggregated_price(AggregatedPrice::Close);
+
+// In act(), once per new bar, inside the idempotency check.
+let rsi_value: Option<f64> = self.rsi.update(candle.close.0);
+let obv_rsi_value: Option<f64> = self.obv_rsi.update(*candle);
+if let Some(bands) = self.vwap.update(*candle) {
+    let upper: Price = bands.upper(self.band_mult);
+    let lower: Price = bands.lower(self.band_mult);
+}
+```
 
 #### StreamingSma
 
@@ -765,10 +875,18 @@ let sl_ref = slice.get(gap.creation_index().saturating_sub(3)); // Option<&Ohlcv
 
 ### 12c. Writing a custom indicator
 
-If the technical analysis you need is not in the library, do not be blocked. Implement `StreamingIndicator` on your own struct, store it on the agent, and reset it in `Agent::reset()`. This is the same trait every built-in streaming indicator uses.
+**You can implement any streaming indicator yourself.** If the technical analysis the specification needs is not in the library, do not stop and do not ask for it. Implement the `StreamingIndicator` trait on your own struct inside `agent.rs`, store it on the agent, and reset it in `Agent::reset()`. This is exactly the trait every built-in streaming indicator uses, so your indicator behaves the same as the built-in ones. The trait needs three things:
+
+- `type Input`: what one update consumes (`f64`, `Ohlcv`, `TradeEvent`, or a small struct of your own).
+- `type Output<'a>`: what one update returns, usually `Option<T>` where `None` means "still warming up". It can be any type, for example a struct with several lines.
+- `update(&mut self, input)` and `reset(&mut self)`. `reset` must clear all history and keep the configuration.
+
+First check the quick reference in section 12b, because several common building blocks (RMA, rolling VWAP with bands, OBV RSI) already exist. A custom indicator needs `Debug` and `Clone` (the agent derives `Clone`), and must own its data (no references).
+
+For a fixed-size lookback window, `chapaty::ring_buffer::RingBuffer` (not in the prelude, import it by path) is ready to use: `RingBuffer::new(n)` panics on 0, `push(x)` returns the evicted oldest value once the buffer is full, `is_full()` tells you the window is warm, `iter()` visits the values (storage order, which is not oldest first after wrapping, so use it for order-independent work such as sums or extremes), and `clear()` empties it in `reset()`. A plain `VecDeque` as below is fine too.
 
 ```rust
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default)] // Clone is required, because the agent that stores it derives Clone
 struct RollingMax {
     window: usize,
     buf: std::collections::VecDeque<f64>,

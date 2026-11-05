@@ -7,7 +7,7 @@
 #   setup	: One-time install (compiles Rust release build + Python deps)
 #   run		: Runs the backtest and generates the QuantStats HTML tearsheet
 #   update	: Refreshes LLM prompts + viz script, bumps chapaty crate
-#   check	: Runs fmt, clippy, and tests (./bin/pre-push.sh hook)
+#   check	: Runs fmt, clippy, and tests (./bin/pre-push.sh if present, else core checks)
 #   doctor	: Validates required dependencies (Rust + Python)
 #   clean	: Removes build artifacts, reports, and the Python venv
 #   eject	: Deletes .github, deploy, bin, .dockerignore (optional, never automatic)
@@ -51,7 +51,6 @@ run:
 	AGENT=$$(printf '%s' "$${AGENT:-Demo}" | tr '[:upper:]' '[:lower:]'); \
 	echo ">> Active agent: $$AGENT"; \
 	echo ">> Running Chapaty backtest natively (target-cpu=native) with increased stack size of 64MiB..."; \
-	echo ">> (See .ai/rust-vibe-rules.md for RUST_MIN_STACK sizing guidance.)"; \
 	RUSTFLAGS="$(CARGO_RUSTFLAGS)" RUST_MIN_STACK=67108864 RUST_BACKTRACE=1 cargo run --release && \
 	echo ">> Generating QuantStats tearsheet for agent: $$AGENT" && \
 	$(VENV_PYTHON) visualization/generate_tearsheet.py $$AGENT
@@ -74,8 +73,16 @@ update:
 	@echo ">> Update complete. If the Makefile itself changed, re-run 'make update' to apply new logic."
 
 check:
-	@echo ">> Running pre-push checks..."
-	./bin/pre-push.sh
+	@if [ -x bin/pre-push.sh ]; then \
+		echo ">> Running pre-push checks..."; \
+		./bin/pre-push.sh; \
+	else \
+		echo ">> bin/pre-push.sh not found (removed by 'make eject'); running core checks instead..."; \
+		cargo fmt --all -- --check && \
+		cargo clippy --all-targets --all-features -- -D warnings && \
+		cargo test --all-features --tests && \
+		echo ">> Core checks passed."; \
+	fi
 
 doctor:
 	@echo ">> Checking required dependencies..."
