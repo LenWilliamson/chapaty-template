@@ -96,7 +96,8 @@ If you need to pin your repository to a historical version, you can check out a 
 
 | Template Tag | Core `chapaty` Version | Notes         |
 | ------------ | ---------------------- | ------------- |
-| `v1.3.7+x`   | `1.3.7`                | Active Stable |
+| `v1.4.0+x`   | `1.4.0`                | Active Stable |
+| `v1.3.7+x`   | `1.3.7`                | Legacy        |
 | `v1.3.6+x`   | `1.3.6`                | Legacy        |
 | `v1.3.5+x`   | `1.3.5`                | Legacy        |
 | `v1.3.1+x`   | `1.3.1`                | Legacy        |
@@ -119,11 +120,13 @@ chapaty-template/
 ├── AI.md                        # AI bootstrap (defers to .ai/)
 ├── .ai/                         # AI-agnostic prompts
 │   ├── agent-plan.md            # Strict spec-first protocol
-│   ├── algorithm-ideas.md       # Seed strategies
 │   ├── chapaty-api.md           # Exact chapaty API surface (don't hallucinate)
-│   ├── rust-vibe-rules.md       # Rust rules for user code
-│   └── update-prompts.md        # Triage prompt for post-release .ai/ updates
+│   └── rust-vibe-rules.md       # Rust rules for user code
+├── .cargo/
+│   ├── audit.toml               # cargo-audit advisory ignores
+│   └── config.toml              # Build config (rustdoc warnings are errors)
 ├── .dockerignore                # Keeps junk and secrets out of image builds (you may delete this)
+├── .env.example                 # Optional local overrides (e.g. which agent to run)
 ├── .github/
 │   └── workflows/
 │       ├── base-image.yaml      # Publishes container images on a release tag (you may delete this)
@@ -137,20 +140,22 @@ chapaty-template/
 │       ├── Dockerfile.base      # Prebuilt dependency tree, so a per run build takes seconds
 │       └── Dockerfile.tearsheet # Python image that turns a finished backtest into the HTML report
 ├── chapaty/
-│   └── reports/                 # Output reports and CSVs (generated after `make run`)
-│       ├── cumulative_returns.csv
-│       ├── equity_curve.csv
-│       ├── journal.csv
-│       ├── portfolio_performance.csv
-│       ├── tearsheet.html       # QuantStats report
-│       └── trade_statistics.csv
+│   └── reports/
+│       └── <agent>/             # Output reports and CSVs (generated after `make run`)
+│           ├── cumulative_returns.csv
+│           ├── equity_curve.csv
+│           ├── journal.csv
+│           ├── leaderboard.csv
+│           ├── portfolio_performance.csv
+│           ├── tearsheet.html   # QuantStats report
+│           └── trade_statistics.csv
 ├── src/
 │   ├── agents/                  # Your strategies live here
 │   │   ├── demo/                # Shipped demo (safe to delete/override)
 │   │   │   ├── agent.rs
 │   │   │   └── spec.md
 │   │   ├── demo.rs
-│   │   ├── template/             # Starter skeleton, ready to fill in
+│   │   ├── template/            # Starter skeleton, ready to fill in
 │   │   │   ├── agent.rs
 │   │   │   └── spec.md
 │   │   └── template.rs
@@ -160,11 +165,13 @@ chapaty-template/
 ├── visualization/
 │   ├── generate_tearsheet.py    # pandas + quantstats HTML tearsheet
 │   └── requirements.txt
+├── .gitignore
 ├── Cargo.lock
 ├── Cargo.toml
 ├── LICENSE
 ├── Makefile
-└── README.md
+├── README.md
+└── rustfmt.toml
 ```
 
 ## Getting Help & Contributing

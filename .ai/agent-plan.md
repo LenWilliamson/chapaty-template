@@ -12,7 +12,7 @@ If the user pastes a trading strategy directly into the chat but has not created
 2. Create the spec: `touch src/agents/<strategy_name>/spec.md`
 3. Paste their idea into the `spec.md` file.
 
-If the user is completely stuck and doesn't know what to build, guide them to `.ai/algorithm-ideas.md` to pick a seed strategy.
+If the user is completely stuck and doesn't know what to build, point them to https://github.com/LenWilliamson/chapaty-garden, a collection of example strategies. Browse it to find a seed idea, then help them adapt it into a `spec.md`. If it is unreachable, help them brainstorm a simple strategy instead (e.g. a moving-average crossover or breakout).
 
 **When registering a new agent in `main.rs`, only add — never remove.** The `ActiveAgent` enum lists every agent the user has built; previous variants and their match arms must remain intact so the user can switch back by changing a single line. Do not "clean up" inactive variants. If an unused-import warning fires for an agent that is not currently selected, leave it — the next switch will silence it.
 
