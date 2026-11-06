@@ -883,7 +883,7 @@ let sl_ref = slice.get(gap.creation_index().saturating_sub(3)); // Option<&Ohlcv
 
 First check the quick reference in section 12b, because several common building blocks (RMA, rolling VWAP with bands, OBV RSI) already exist. A custom indicator needs `Debug` and `Clone` (the agent derives `Clone`), and must own its data (no references).
 
-For a fixed-size lookback window, `chapaty::ring_buffer::RingBuffer` (not in the prelude, import it by path) is ready to use: `RingBuffer::new(n)` panics on 0, `push(x)` returns the evicted oldest value once the buffer is full, `is_full()` tells you the window is warm, `iter()` visits the values (storage order, which is not oldest first after wrapping, so use it for order-independent work such as sums or extremes), and `clear()` empties it in `reset()`. A plain `VecDeque` as below is fine too.
+For a fixed-size lookback window, `chapaty::ring_buffer::RingBuffer` (not in the prelude, import it by path) is ready to use: `RingBuffer::new(n)` panics on 0, `push(x)` returns the evicted oldest value once the buffer is full, `is_full()` tells you the window is warm, `iter()` visits the values in storage order (not oldest first after wrapping), and `clear()` empties it in `reset()`. To keep a rolling sum in $O(1)$, use the value `push` evicts: `sum += x - evicted.unwrap_or(0.0)`. A plain `VecDeque`, as in the examples below, is fine too.
 
 #### Per-update cost: choose the variant deliberately
 
@@ -892,7 +892,7 @@ Every `update` runs once per data point, and we process millions of them (also i
 **Variant A: simple scan, $O(w)$ per update ($w$ = window size).** It recomputes the maximum over the whole window on every tick. It is the easiest to read and, for small windows, often as fast as Variant B or faster, because the scan runs over contiguous memory with few branches. Use it only when the window is small (roughly 200 to 1000 elements) AND the work per element is trivial (comparisons, additions). It is a bad choice for large windows: with $w = 1{,}000{,}000$ every tick touches a million values.
 
 ```rust
-#[derive(Debug, Clone, Default)] // Clone is required, because the agent that stores it derives Clone
+#[derive(Debug, Clone)] // Clone is required, because the agent that stores it derives Clone
 struct RollingMaxScan {
     window: usize,
     buf: std::collections::VecDeque<f64>,
@@ -923,11 +923,20 @@ impl StreamingIndicator for RollingMaxScan {
 **Variant B: monotonic deque, amortized $O(1)$ per update.** This is the classic LeetCode "sliding window maximum". The deque only holds candidates that can still become the maximum, with strictly decreasing values from front to back, so the front is always the current maximum. Every element is pushed once and popped at most once, hence amortized $O(1)$. A single update can still cost $O(w)$ in the worst case (a new large value clears the deque). Use this variant for large windows, for expensive per-element work, and whenever you are unsure.
 
 ```rust
-#[derive(Debug, Clone, Default)] // Clone is required, because the agent that stores it derives Clone
+#[derive(Debug, Clone)] // Clone is required, because the agent that stores it derives Clone
 struct RollingMaxDeque {
     window: usize,
     n: usize, // number of values seen so far (= index of the next value)
     buf: std::collections::VecDeque<(usize, f64)>, // (index, value), strictly decreasing from front to back
+}
+
+impl RollingMaxDeque {
+    fn new(window: usize) -> ChapatyResult<Self> {
+        if window == 0 {
+            return Err(AgentError::InvalidInput("RollingMaxDeque window must be > 0".to_string()).into());
+        }
+        Ok(Self { window, n: 0, buf: std::collections::VecDeque::new() })
+    }
 }
 
 impl StreamingIndicator for RollingMaxDeque {
@@ -968,11 +977,11 @@ impl StreamingIndicator for RollingMaxDeque {
 
 **Which one do I use?**
 
-- Small window (roughly 200 to 1000) and trivial work per element: Variant A is fine and keeps the code simple.
-- Large window (thousands up to millions), expensive work per element (multiplications, divisions, `exp`/`ln`), or unknown window size (e.g. a parameter in a grid search): Variant B.
+- Small window (roughly 200 to 1000) and trivial work per element: Variant A is fine and keeps the code simple. This also holds for a window that is a grid parameter, as long as its whole swept range stays within that size.
+- Large window (thousands up to millions), expensive work per element (multiplications, divisions, `exp`/`ln`), or unknown window size (e.g. a grid parameter whose range can go beyond roughly 1000): Variant B.
 - You cannot benchmark here, so do not guess. When in doubt, use Variant B.
 - The same rule applies to every indicator. Never recompute a sum, mean or extreme over the whole window on each tick if it can be maintained incrementally (running sum, monotonic deque, etc.). Rolling minimum is Variant B with `>=` instead of `<=`.
-- Validate `window > 0` in the constructor and return `Err(AgentError::InvalidInput(...).into())`. `Default` yields `window == 0`, which is meaningless.
+- Validate `window > 0` in the constructor and return `Err(AgentError::InvalidInput(...).into())`, as `RollingMaxDeque::new` does. Do not derive `Default` for an indicator with a window, because it yields `window == 0`, which is meaningless.
 
 When you add a custom indicator, let the user know they can submit a pull request to the core `chapaty` library, or request it in the `#data-requests` channel on Discord, so everyone gets it.
 
