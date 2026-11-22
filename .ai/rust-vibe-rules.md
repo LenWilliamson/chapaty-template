@@ -76,6 +76,8 @@ The engine handles async data streaming; the agent itself is synchronous. `act` 
 
 For temporary, quick-and-dirty debugging of logic errors, using `dbg!` and `println!` is completely fine. However, **you MUST remove them before finalizing the agent or running grid searches**, as printing on every tick will severely bottleneck the CPU.
 
+Print the values you need, such as the candle, a price or an indicator output. `Observation` and `MarketView` do not implement `Debug` on purpose, because they reach the whole dataset, so `dbg!(obs)` does not compile.
+
 For permanent production logging, use `tracing::debug!` or `tracing::info!`, and limit logs to state transitions (e.g., "Entered Trade", "Phase Changed"). If the user wants to set up the tracing subscriber, direct them to [`examples/quickstart.rs`](https://github.com/LenWilliamson/chapaty/blob/main/examples/quickstart.rs) in the core Chapaty repo.
 
 ## 10. One Agent = One File
@@ -93,3 +95,44 @@ Do not narrate obvious code. Use comments to explain business rules, magic numbe
 **BAD:** `// Increment the trade counter`
 
 **GOOD:** `// Risk factor 0.89 comes from the Q3 2024 optimization sweep`
+
+## 13. Local Session Times: Convert Once per Day, Compare in UTC
+
+Market data timestamps are UTC. Strategies often need local times, for example "close everything at 22:00 Berlin" or "a new trading day starts at local midnight". Converting every candle to the local time zone (`ts.with_timezone(&Berlin)`) looks up the daylight saving rules each time. That is real work on every candle of every agent in a grid search.
+
+Do it once per local day instead. When a new local day starts, compute the UTC instants of the local times you need (the cutoff and the next local midnight) and store them on the agent. Every candle then only compares UTC timestamps.
+
+Never hard-code a UTC hour for a local time. 22:00 Berlin is 21:00 UTC in winter and 20:00 UTC in summer, so a fixed UTC hour is wrong for half the year.
+
+```rust
+// Stored on the agent (and cleared in reset):
+//   timeout_utc: Option<DateTime<Utc>>,              22:00 Berlin today, in UTC
+//   next_berlin_midnight_utc: Option<DateTime<Utc>>, start of the next Berlin day, in UTC
+
+let now = candle.close_timestamp;
+if self.next_berlin_midnight_utc.is_none_or(|midnight| now >= midnight) {
+    // A new Berlin day: convert once, with the daylight saving rules applied.
+    if let Some((timeout, midnight)) = berlin_day_bounds(now) {
+        self.timeout_utc = Some(timeout);
+        self.next_berlin_midnight_utc = Some(midnight);
+    }
+}
+if self.timeout_utc.is_some_and(|timeout| now >= timeout) {
+    // 22:00 Berlin has passed
+}
+
+/// UTC instants of 22:00 Berlin and of the next Berlin midnight, for the
+/// Berlin day that contains `ts`.
+fn berlin_day_bounds(ts: DateTime<Utc>) -> Option<(DateTime<Utc>, DateTime<Utc>)> {
+    let date = ts.with_timezone(&Berlin).date_naive();
+    let at = |day: NaiveDate, hour: u32| {
+        day.and_hms_opt(hour, 0, 0)?
+            .and_local_timezone(Berlin)
+            .earliest()
+            .map(|t| t.with_timezone(&Utc))
+    };
+    Some((at(date, 22)?, at(date.succ_opt()?, 0)?))
+}
+```
+
+Pick local times that exist exactly once a day. Berlin switches between CET and CEST at 02:00 or 03:00, so 22:00 and midnight are always unambiguous. Optionally: test the helper with a winter day, a summer day, and the day the clocks change.

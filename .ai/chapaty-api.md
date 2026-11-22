@@ -114,15 +114,15 @@ A preset is just a prebuilt `EnvConfig`. You build your own the same way the pre
 
 Each data stream is described by a query struct. Every query implements `to_id()`, which returns the stream identifier you use later to read that stream from the observation. `to_id()` drops operational fields (like `batch_size`) and keeps only what identifies the stream. It returns a `ChapatyResult`, so use `?`.
 
-| Query struct             | `to_id()` returns    | Read it in `act()` with        |
-| ------------------------ | -------------------- | ------------------------------ |
-| `OhlcvSpotQuery`         | `OhlcvId`            | `market_view.ohlcv()`          |
-| `OhlcvFutureQuery`       | `OhlcvId`            | `market_view.ohlcv()`          |
-| `TradesSpotQuery`        | `TradesId`           | `market_view.trades()`         |
-| `TpoSpotQuery`           | `TpoId`              | `market_view.tpo()`            |
-| `TpoFutureQuery`         | `TpoId`              | `market_view.tpo()`            |
-| `VolumeProfileSpotQuery` | `VolumeProfileId`    | `market_view.volume_profile()` |
-| `EconomicCalendarQuery`  | `EconomicCalendarId` | `market_view.economic_news()`  |
+| Query struct             | `to_id()` returns    | Read it in `act()` with           |
+| ------------------------ | -------------------- | --------------------------------- |
+| `OhlcvSpotQuery`         | `OhlcvId`            | `market_view.ohlcv()`             |
+| `OhlcvFutureQuery`       | `OhlcvId`            | `market_view.ohlcv()`             |
+| `TradesSpotQuery`        | `TradesId`           | `market_view.trades()`            |
+| `TpoSpotQuery`           | `TpoId`              | `market_view.tpo()`               |
+| `TpoFutureQuery`         | `TpoId`              | `market_view.tpo()`               |
+| `VolumeProfileSpotQuery` | `VolumeProfileId`    | `market_view.volume_profile()`    |
+| `EconomicCalendarQuery`  | `EconomicCalendarId` | `market_view.economic_calendar()` |
 
 `OhlcvSpotQuery` and `OhlcvFutureQuery` fields: `broker`, `symbol`, `exchange: Option<Exchange>` (None uses the broker default), `period`, `batch_size: i32` (100 to 10000, use 1000), `indicators: Vec<BatchOhlcvIndicator>`.
 
@@ -323,14 +323,14 @@ if let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id,
 
 `rev_iter` and `new_events_since` both run newest to oldest and stop as soon as they pass your cutoff, so prefer them over scanning the whole slice.
 
-**All stream accessors on `market_view`:** `ohlcv()`, `trades()`, `economic_news()`, `volume_profile()`, `tpo()`, `ema()`, `sma()`, `rsi()`, `atr()`, `roc()`, `ohlcv_vwap()`, `trades_vwap()`, `ohlcv_session()`, `trades_session()`. An accessor only returns data if you configured the matching query or batch indicator. Otherwise every method returns `None` or zero.
+**All stream accessors on `market_view`:** `ohlcv()`, `trades()`, `economic_calendar()`, `volume_profile()`, `tpo()`, `ema()`, `sma()`, `rsi()`, `atr()`, `roc()`, `ohlcv_vwap()`, `trades_vwap()`, `ohlcv_session()`, `trades_session()`. An accessor only returns data if you configured the matching query or batch indicator. Otherwise every method returns `None` or zero.
 
 ```rust
 // Batch indicators are read the same way, using the id you built by hand.
-let sma = obs.market_view.sma().last_event(&sma_id);              // Option<&Sma>
-let atr = obs.market_view.atr().last_event(&atr_id);              // Option<&Atr>
-let session = obs.market_view.ohlcv_session().last_event(&sid);   // Option<&OhlcvSession>
-let news = obs.market_view.economic_news().last_event(&cal_id);   // Option<&EconomicEvent>
+let sma = obs.market_view.sma().last_event(&sma_id);                // Option<&Sma>
+let atr = obs.market_view.atr().last_event(&atr_id);                // Option<&Atr>
+let session = obs.market_view.ohlcv_session().last_event(&sid);     // Option<&OhlcvSession>
+let news = obs.market_view.economic_calendar().last_event(&cal_id); // Option<&EconomicEvent>
 ```
 
 ### 8c. Price helpers on `market_view`
@@ -351,7 +351,7 @@ let touched = obs.market_view.reached_price(price, self.symbol, TradeKind::Long)
 let candle: Option<Ohlcv> = obs.market_view.find_candle(&self.m15_id, some_ts);
 
 // Every market this environment trades.
-let markets: Arc<[MarketId]> = obs.market_view.market_ids();
+let markets: &[MarketId] = obs.market_view.market_ids();
 ```
 
 `try_resolved_close_price` is the safe way to ask what a symbol is worth right now. It looks at every stream that can produce a close price, keeps the one with the newest timestamp, and never reads past the current step. It returns an error when no stream has data for that symbol yet, which happens before an asset's first tick.
@@ -449,6 +449,8 @@ Use `exit_reason()` when you want to react to how the last trade ended, for exam
 - **`EconomicEvent`**: `.timestamp`, `.actual`, `.forecast`, `.previous` (all `Option<EconomicValue>`), `.economic_impact` (`EconomicEventImpact`).
 - **`VolumeProfile` and `Tpo`**: `.poc`, `.value_area_high`, `.value_area_low` (all `Price`).
 - **`OhlcvSession`** (from the batch overnight range): `.session` (`SessionDate`), `.open_timestamp`, `.close_timestamp`, `.high`, `.low`, `.highest_close`, `.lowest_close`, `.volume`, `.vwap`.
+
+All timestamps in chapaty are UTC. For local session times (for example "close at 22:00 Berlin"), compute the UTC instants once per local day and compare UTC timestamps on each candle. Never hard-code a UTC hour, because daylight saving shifts it by an hour for half the year.
 
 ## 9. Emitting Actions
 
@@ -859,12 +861,19 @@ if let Some((evt, pivot)) = hhll.update(IndexedOhlcv { index: idx, candle: *cand
 - `PriceSource::HighLow` (default): filled when a wick reaches the boundary.
 - `PriceSource::OpenClose`: filled only when the candle body reaches it.
 
+`StreamingFairValueGap::new(ttl_policy)` takes the time to live as a required choice. It decides when an open gap leaves the active list:
+
+- `TtlPolicy::Filled`: a gap stays open until price fills it (the classic definition).
+- `TtlPolicy::Time(duration)` / `TtlPolicy::Bars(n)`: a gap also expires once it is that old.
+
+**Performance:** every `update` checks every open gap. With `Filled`, gaps far from the price are never filled, so on minute data over months or years the open list keeps growing and every candle gets slower. Unless the strategy really needs gaps of any age, use a time or bar limit. Pick it for the timeframe: 24 hours suits minute candles, but on daily candles it is about one bar, so use `Bars(n)` there. Ask the user which age limit fits the strategy and write it into the spec.
+
 Do not build a manual ring buffer to recover candles around a gap. `creation_index()` is the global index of the right-hand candle, so index the live slice directly.
 
 ```rust
-let fvg = StreamingFairValueGap::default()
-    .with_price_source(PriceSource::OpenClose)
-    .with_ttl_policy(TtlPolicy::Filled);
+// The time to live is required: here gaps older than a day expire.
+let fvg = StreamingFairValueGap::new(TtlPolicy::Time(chrono::Duration::hours(24)))
+    .with_price_source(PriceSource::OpenClose);
 
 let idx = obs.market_view.ohlcv().len(&self.m15_id).saturating_sub(1);
 let active = fvg.update(IndexedOhlcv { index: idx, candle: *candle });
