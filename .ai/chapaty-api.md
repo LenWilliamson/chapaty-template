@@ -81,12 +81,24 @@ These are the actual variants in the current library. If you need one that is no
 
 ```rust
 let btc = Symbol::Spot(SpotPair::BtcUsdt);
+// Example only, to show the syntax. Choose the real contract from today's date (see below).
 let eurusd = Symbol::Future(FutureContract {
     root: FutureRoot::EurUsd,
     month: ContractMonth::September,
     year: ContractYear::Y6,
 });
 ```
+
+### Choosing the futures contract
+
+Futures contracts expire, so "the current contract" changes over time. Never copy the contract from an example in this file.
+
+1. **Work out the front month from today's date.** Use the current date and your own knowledge of the root's standard expiry cycle (for example quarterly for the currency and E-mini roots, monthly for roots such as `Btc`). Pick the contract that is the front month now.
+2. **The database may lag behind.** The futures data is only updated about once a quarter and is not rolled over every month. So the current front month may not exist in the data yet.
+3. **Fall back one contract, only for the right symptom.** Try the previous contract only if the query itself fails, or the stream for that contract is empty from the start (the data does not exist). Step back by contract, not by calendar month, and cross the year boundary when needed: if the March 2027 contract (`March`, `Y7`) is missing, try December 2026 (`December`, `Y6`). Go back one contract only. If that also fails, stop and report; do not keep guessing.
+4. **Be explicit with the user.** Always say which contract you chose and why. If you fell back, say so clearly: which contract you tried first, that its data was missing, and which one you used instead.
+
+**Do not confuse "no data" with "no signals".** A missing contract means the data does not exist. A strategy that produces no trades (or fewer than before) usually means the logic, filters or indicators never fired, which is a normal result and a different problem. If an agent produces zero trades, do not switch contract months to try to fix it. Debug the strategy first (warmup, filters, conditions, see section 5d). Switch contracts only when the data itself is missing.
 
 ## 4. CRITICAL GOTCHA: Asynchronous Data & Missing Prices
 
@@ -1001,3 +1013,5 @@ Everything returns `ChapatyResult<T> = Result<T, ChapatyError>`. Use `?` to prop
 ```rust
 return Err(AgentError::InvalidInput("reason here".to_string()).into());
 ```
+
+For missing futures data and the contract fallback rule, see "Choosing the futures contract" in section 3.
