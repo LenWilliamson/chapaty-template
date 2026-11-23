@@ -81,12 +81,24 @@ These are the actual variants in the current library. If you need one that is no
 
 ```rust
 let btc = Symbol::Spot(SpotPair::BtcUsdt);
+// Example only, to show the syntax. Choose the real contract from today's date (see below).
 let eurusd = Symbol::Future(FutureContract {
     root: FutureRoot::EurUsd,
     month: ContractMonth::September,
     year: ContractYear::Y6,
 });
 ```
+
+### Choosing the futures contract
+
+Futures contracts expire, so "the current contract" changes over time. Never copy the contract from an example in this file.
+
+1. **Work out the front month from today's date.** Use the current date and your own knowledge of the root's standard expiry cycle (for example quarterly for the currency and E-mini roots, monthly for roots such as `Btc`). Pick the contract that is the front month now.
+2. **The database may lag behind.** The futures data is only updated about once a quarter and is not rolled over every month. So the current front month may not exist in the data yet.
+3. **Fall back one contract, only for the right symptom.** Try the previous contract only if the query itself fails, or the stream for that contract is empty from the start (the data does not exist). Step back by contract, not by calendar month, and cross the year boundary when needed: if the March 2027 contract (`March`, `Y7`) is missing, try December 2026 (`December`, `Y6`). Go back one contract only. If that also fails, stop and report; do not keep guessing.
+4. **Be explicit with the user.** Always say which contract you chose and why. If you fell back, say so clearly: which contract you tried first, that its data was missing, and which one you used instead.
+
+**Do not confuse "no data" with "no signals".** A missing contract means the data does not exist. A strategy that produces no trades (or fewer than before) usually means the logic, filters or indicators never fired, which is a normal result and a different problem. If an agent produces zero trades, do not switch contract months to try to fix it. Debug the strategy first (warmup, filters, conditions, see section 5d). Switch contracts only when the data itself is missing.
 
 ## 4. CRITICAL GOTCHA: Asynchronous Data & Missing Prices
 
@@ -114,15 +126,15 @@ A preset is just a prebuilt `EnvConfig`. You build your own the same way the pre
 
 Each data stream is described by a query struct. Every query implements `to_id()`, which returns the stream identifier you use later to read that stream from the observation. `to_id()` drops operational fields (like `batch_size`) and keeps only what identifies the stream. It returns a `ChapatyResult`, so use `?`.
 
-| Query struct             | `to_id()` returns    | Read it in `act()` with        |
-| ------------------------ | -------------------- | ------------------------------ |
-| `OhlcvSpotQuery`         | `OhlcvId`            | `market_view.ohlcv()`          |
-| `OhlcvFutureQuery`       | `OhlcvId`            | `market_view.ohlcv()`          |
-| `TradesSpotQuery`        | `TradesId`           | `market_view.trades()`         |
-| `TpoSpotQuery`           | `TpoId`              | `market_view.tpo()`            |
-| `TpoFutureQuery`         | `TpoId`              | `market_view.tpo()`            |
-| `VolumeProfileSpotQuery` | `VolumeProfileId`    | `market_view.volume_profile()` |
-| `EconomicCalendarQuery`  | `EconomicCalendarId` | `market_view.economic_news()`  |
+| Query struct             | `to_id()` returns    | Read it in `act()` with           |
+| ------------------------ | -------------------- | --------------------------------- |
+| `OhlcvSpotQuery`         | `OhlcvId`            | `market_view.ohlcv()`             |
+| `OhlcvFutureQuery`       | `OhlcvId`            | `market_view.ohlcv()`             |
+| `TradesSpotQuery`        | `TradesId`           | `market_view.trades()`            |
+| `TpoSpotQuery`           | `TpoId`              | `market_view.tpo()`               |
+| `TpoFutureQuery`         | `TpoId`              | `market_view.tpo()`               |
+| `VolumeProfileSpotQuery` | `VolumeProfileId`    | `market_view.volume_profile()`    |
+| `EconomicCalendarQuery`  | `EconomicCalendarId` | `market_view.economic_calendar()` |
 
 `OhlcvSpotQuery` and `OhlcvFutureQuery` fields: `broker`, `symbol`, `exchange: Option<Exchange>` (None uses the broker default), `period`, `batch_size: i32` (100 to 10000, use 1000), `indicators: Vec<BatchOhlcvIndicator>`.
 
@@ -323,14 +335,14 @@ if let Some(new_events) = obs.market_view.ohlcv().new_events_since(&self.m15_id,
 
 `rev_iter` and `new_events_since` both run newest to oldest and stop as soon as they pass your cutoff, so prefer them over scanning the whole slice.
 
-**All stream accessors on `market_view`:** `ohlcv()`, `trades()`, `economic_news()`, `volume_profile()`, `tpo()`, `ema()`, `sma()`, `rsi()`, `atr()`, `roc()`, `ohlcv_vwap()`, `trades_vwap()`, `ohlcv_session()`, `trades_session()`. An accessor only returns data if you configured the matching query or batch indicator. Otherwise every method returns `None` or zero.
+**All stream accessors on `market_view`:** `ohlcv()`, `trades()`, `economic_calendar()`, `volume_profile()`, `tpo()`, `ema()`, `sma()`, `rsi()`, `atr()`, `roc()`, `ohlcv_vwap()`, `trades_vwap()`, `ohlcv_session()`, `trades_session()`. An accessor only returns data if you configured the matching query or batch indicator. Otherwise every method returns `None` or zero.
 
 ```rust
 // Batch indicators are read the same way, using the id you built by hand.
-let sma = obs.market_view.sma().last_event(&sma_id);              // Option<&Sma>
-let atr = obs.market_view.atr().last_event(&atr_id);              // Option<&Atr>
-let session = obs.market_view.ohlcv_session().last_event(&sid);   // Option<&OhlcvSession>
-let news = obs.market_view.economic_news().last_event(&cal_id);   // Option<&EconomicEvent>
+let sma = obs.market_view.sma().last_event(&sma_id);                // Option<&Sma>
+let atr = obs.market_view.atr().last_event(&atr_id);                // Option<&Atr>
+let session = obs.market_view.ohlcv_session().last_event(&sid);     // Option<&OhlcvSession>
+let news = obs.market_view.economic_calendar().last_event(&cal_id); // Option<&EconomicEvent>
 ```
 
 ### 8c. Price helpers on `market_view`
@@ -351,7 +363,7 @@ let touched = obs.market_view.reached_price(price, self.symbol, TradeKind::Long)
 let candle: Option<Ohlcv> = obs.market_view.find_candle(&self.m15_id, some_ts);
 
 // Every market this environment trades.
-let markets: Arc<[MarketId]> = obs.market_view.market_ids();
+let markets: &[MarketId] = obs.market_view.market_ids();
 ```
 
 `try_resolved_close_price` is the safe way to ask what a symbol is worth right now. It looks at every stream that can produce a close price, keeps the one with the newest timestamp, and never reads past the current step. It returns an error when no stream has data for that symbol yet, which happens before an asset's first tick.
@@ -449,6 +461,8 @@ Use `exit_reason()` when you want to react to how the last trade ended, for exam
 - **`EconomicEvent`**: `.timestamp`, `.actual`, `.forecast`, `.previous` (all `Option<EconomicValue>`), `.economic_impact` (`EconomicEventImpact`).
 - **`VolumeProfile` and `Tpo`**: `.poc`, `.value_area_high`, `.value_area_low` (all `Price`).
 - **`OhlcvSession`** (from the batch overnight range): `.session` (`SessionDate`), `.open_timestamp`, `.close_timestamp`, `.high`, `.low`, `.highest_close`, `.lowest_close`, `.volume`, `.vwap`.
+
+All timestamps in chapaty are UTC. For local session times (for example "close at 22:00 Berlin"), compute the UTC instants once per local day and compare UTC timestamps on each candle. Never hard-code a UTC hour, because daylight saving shifts it by an hour for half the year.
 
 ## 9. Emitting Actions
 
@@ -859,12 +873,19 @@ if let Some((evt, pivot)) = hhll.update(IndexedOhlcv { index: idx, candle: *cand
 - `PriceSource::HighLow` (default): filled when a wick reaches the boundary.
 - `PriceSource::OpenClose`: filled only when the candle body reaches it.
 
+`StreamingFairValueGap::new(ttl_policy)` takes the time to live as a required choice. It decides when an open gap leaves the active list:
+
+- `TtlPolicy::Filled`: a gap stays open until price fills it (the classic definition).
+- `TtlPolicy::Time(duration)` / `TtlPolicy::Bars(n)`: a gap also expires once it is that old.
+
+**Performance:** every `update` checks every open gap. With `Filled`, gaps far from the price are never filled, so on minute data over months or years the open list keeps growing and every candle gets slower. Unless the strategy really needs gaps of any age, use a time or bar limit. Pick it for the timeframe: 24 hours suits minute candles, but on daily candles it is about one bar, so use `Bars(n)` there. Ask the user which age limit fits the strategy and write it into the spec.
+
 Do not build a manual ring buffer to recover candles around a gap. `creation_index()` is the global index of the right-hand candle, so index the live slice directly.
 
 ```rust
-let fvg = StreamingFairValueGap::default()
-    .with_price_source(PriceSource::OpenClose)
-    .with_ttl_policy(TtlPolicy::Filled);
+// The time to live is required: here gaps older than a day expire.
+let fvg = StreamingFairValueGap::new(TtlPolicy::Time(chrono::Duration::hours(24)))
+    .with_price_source(PriceSource::OpenClose);
 
 let idx = obs.market_view.ohlcv().len(&self.m15_id).saturating_sub(1);
 let active = fvg.update(IndexedOhlcv { index: idx, candle: *candle });
@@ -883,16 +904,22 @@ let sl_ref = slice.get(gap.creation_index().saturating_sub(3)); // Option<&Ohlcv
 
 First check the quick reference in section 12b, because several common building blocks (RMA, rolling VWAP with bands, OBV RSI) already exist. A custom indicator needs `Debug` and `Clone` (the agent derives `Clone`), and must own its data (no references).
 
-For a fixed-size lookback window, `chapaty::ring_buffer::RingBuffer` (not in the prelude, import it by path) is ready to use: `RingBuffer::new(n)` panics on 0, `push(x)` returns the evicted oldest value once the buffer is full, `is_full()` tells you the window is warm, `iter()` visits the values (storage order, which is not oldest first after wrapping, so use it for order-independent work such as sums or extremes), and `clear()` empties it in `reset()`. A plain `VecDeque` as below is fine too.
+For a fixed-size lookback window, `chapaty::ring_buffer::RingBuffer` (not in the prelude, import it by path) is ready to use: `RingBuffer::new(n)` panics on 0, `push(x)` returns the evicted oldest value once the buffer is full, `is_full()` tells you the window is warm, `iter()` visits the values in storage order (not oldest first after wrapping), and `clear()` empties it in `reset()`. To keep a rolling sum in $O(1)$, use the value `push` evicts: `sum += x - evicted.unwrap_or(0.0)`. A plain `VecDeque`, as in the examples below, is fine too.
+
+#### Per-update cost: choose the variant deliberately
+
+Every `update` runs once per data point, and we process millions of them (also inside grid searches). The cost of one `update` therefore matters. The example below shows the same indicator (rolling maximum) in two variants.
+
+**Variant A: simple scan, $O(w)$ per update ($w$ = window size).** It recomputes the maximum over the whole window on every tick. It is the easiest to read and, for small windows, often as fast as Variant B or faster, because the scan runs over contiguous memory with few branches. Use it only when the window is small (roughly 200 to 1000 elements) AND the work per element is trivial (comparisons, additions). It is a bad choice for large windows: with $w = 1{,}000{,}000$ every tick touches a million values.
 
 ```rust
-#[derive(Debug, Clone, Default)] // Clone is required, because the agent that stores it derives Clone
-struct RollingMax {
+#[derive(Debug, Clone)] // Clone is required, because the agent that stores it derives Clone
+struct RollingMaxScan {
     window: usize,
     buf: std::collections::VecDeque<f64>,
 }
 
-impl StreamingIndicator for RollingMax {
+impl StreamingIndicator for RollingMaxScan {
     type Input = f64;
     type Output<'a> = Option<f64>;
 
@@ -904,6 +931,7 @@ impl StreamingIndicator for RollingMax {
         if self.buf.len() < self.window {
             return None; // still warming up
         }
+        // O(w): visits the whole window on every tick
         self.buf.iter().copied().fold(None, |m, v| Some(m.map_or(v, |m: f64| m.max(v))))
     }
 
@@ -912,6 +940,69 @@ impl StreamingIndicator for RollingMax {
     }
 }
 ```
+
+**Variant B: monotonic deque, amortized $O(1)$ per update.** This is the classic LeetCode "sliding window maximum". The deque only holds candidates that can still become the maximum, with strictly decreasing values from front to back, so the front is always the current maximum. Every element is pushed once and popped at most once, hence amortized $O(1)$. A single update can still cost $O(w)$ in the worst case (a new large value clears the deque). Use this variant for large windows, for expensive per-element work, and whenever you are unsure.
+
+```rust
+#[derive(Debug, Clone)] // Clone is required, because the agent that stores it derives Clone
+struct RollingMaxDeque {
+    window: usize,
+    n: usize, // number of values seen so far (= index of the next value)
+    buf: std::collections::VecDeque<(usize, f64)>, // (index, value), strictly decreasing from front to back
+}
+
+impl RollingMaxDeque {
+    fn new(window: usize) -> ChapatyResult<Self> {
+        if window == 0 {
+            return Err(AgentError::InvalidInput("RollingMaxDeque window must be > 0".to_string()).into());
+        }
+        Ok(Self { window, n: 0, buf: std::collections::VecDeque::new() })
+    }
+}
+
+impl StreamingIndicator for RollingMaxDeque {
+    type Input = f64;
+    type Output<'a> = Option<f64>;
+
+    // NaN: comparisons with NaN are always false, so a NaN is never evicted by later
+    // values and breaks the monotonic invariant (results become wrong). If NaN can
+    // occur in the input, handle it explicitly (skip, reject or propagate) before
+    // it reaches this indicator.
+    fn update(&mut self, x: f64) -> Option<f64> {
+        // Remove dominated candidates from the back: they are older and not larger
+        // than x, so they can never be the maximum again.
+        while self.buf.back().is_some_and(|&(_, v)| v <= x) {
+            self.buf.pop_back();
+        }
+        self.buf.push_back((self.n, x));
+
+        // Remove candidates from the front that have left the window.
+        while self.buf.front().is_some_and(|&(i, _)| i + self.window <= self.n) {
+            self.buf.pop_front();
+        }
+
+        self.n += 1;
+        if self.n < self.window {
+            return None; // still warming up
+        }
+        // Values are decreasing, so the front is the maximum of the window.
+        self.buf.front().map(|&(_, v)| v)
+    }
+
+    fn reset(&mut self) {
+        self.buf.clear();
+        self.n = 0; // the index counter is part of the history
+    }
+}
+```
+
+**Which one do I use?**
+
+- Small window (roughly 200 to 1000) and trivial work per element: Variant A is fine and keeps the code simple. This also holds for a window that is a grid parameter, as long as its whole swept range stays within that size.
+- Large window (thousands up to millions), expensive work per element (multiplications, divisions, `exp`/`ln`), or unknown window size (e.g. a grid parameter whose range can go beyond roughly 1000): Variant B.
+- You cannot benchmark here, so do not guess. When in doubt, use Variant B.
+- The same rule applies to every indicator. Never recompute a sum, mean or extreme over the whole window on each tick if it can be maintained incrementally (running sum, monotonic deque, etc.). Rolling minimum is Variant B with `>=` instead of `<=`.
+- Validate `window > 0` in the constructor and return `Err(AgentError::InvalidInput(...).into())`, as `RollingMaxDeque::new` does. Do not derive `Default` for an indicator with a window, because it yields `window == 0`, which is meaningless.
 
 When you add a custom indicator, let the user know they can submit a pull request to the core `chapaty` library, or request it in the `#data-requests` channel on Discord, so everyone gets it.
 
@@ -922,3 +1013,5 @@ Everything returns `ChapatyResult<T> = Result<T, ChapatyError>`. Use `?` to prop
 ```rust
 return Err(AgentError::InvalidInput("reason here".to_string()).into());
 ```
+
+For missing futures data and the contract fallback rule, see "Choosing the futures contract" in section 3.
