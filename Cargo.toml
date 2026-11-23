@@ -1,13 +1,13 @@
 [package]
 name = "chapaty-template"
-version = "1.4.1+1"
+version = "1.4.2"
 edition = "2024"
 rust-version = "1.100.0"
 publish = false
 
 [dependencies]
 anyhow = "1.0"
-chapaty = "1.4.1"
+chapaty = "1.4.2"
 chrono = "0.4"
 chrono-tz = "0.10"
 dotenvy = "0.15.7"
