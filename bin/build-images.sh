@@ -94,7 +94,7 @@ if [ -z "$VERSION" ]; then
     exit 1
 fi
 
-# A cargo version can carry build metadata after a plus sign, as 1.3.5+2 does,
+# A cargo version can carry build metadata after a plus sign, as 1.4.2+1 does,
 # and a plus sign is not a legal character in a Docker tag. It becomes a dash,
 # which is the same rewrite CI applies, so local and published tags match.
 TAG="${VERSION//+/-}"
