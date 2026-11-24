@@ -50,12 +50,33 @@ WORKDIR /app
 # cached.
 COPY agent.rs src/agents/template/agent.rs
 
+# The artifacts of chapaty-template itself are removed first, so that cargo has
+# to compile the strategy. COPY keeps the modification time that the file had in
+# the build context, and cargo decides whether a package is up to date by
+# comparing file times. A strategy file that is older than the compiled
+# placeholder would therefore look unchanged, the build would finish in a
+# fraction of a second, and the image would run the placeholder from the base
+# image instead of the generated strategy. The same failure once made published
+# base images ship an empty program. This is done with cargo clean -p because the
+# layout of the target directory is not a stable interface. It only removes the
+# artifacts of that one package, so every dependency stays compiled.
+#
 # --offline forbids any network access, so if the base image were missing even
 # one compiled dependency this would fail here rather than silently downloading
 # it and turning a seconds long build into a minutes long one. --locked refuses
 # to change Cargo.lock, so the versions compiled here are exactly the versions
 # the base image warmed up.
-RUN cargo build --release --offline --locked
+#
+# The size check is the same guard that the base image has. A binary of only a
+# few hundred kilobytes is the empty placeholder, not a real program.
+RUN cargo clean -p chapaty-template --release \
+    && cargo build --release --offline --locked \
+    && size="$(stat -c %s target/release/chapaty-template)" \
+    && echo "target/release/chapaty-template is ${size} bytes" \
+    && if [ "${size}" -lt 5000000 ]; then \
+        echo "ERROR: the binary is only ${size} bytes, so this is the empty placeholder and not the real program." >&2; \
+        exit 1; \
+    fi
 
 # ------------------------------------------------------------------------------
 # Stage 2: the image that actually runs

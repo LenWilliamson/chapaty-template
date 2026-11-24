@@ -126,6 +126,58 @@ fi
 BUILT=()
 
 # ==============================================================================
+# Smoke tests
+# ==============================================================================
+
+# These prove that an image carries the real program and not an empty
+# placeholder. Nothing else in the pipeline executes the binary, which is how
+# published images once held a placeholder while every build stayed green.
+#
+# The program is started with no configuration. The real one prints a first line
+# before it does anything else and then fails, because there is no data source
+# and no credentials here. The placeholder prints nothing. The exit code is
+# therefore ignored on purpose and only the output is checked. The timeout stops
+# a program that unexpectedly keeps running from hanging this script.
+#
+# The base image has a shell, so it can also be checked for size. The real
+# binary is well over a hundred megabytes and the placeholder is a few hundred
+# kilobytes.
+smoke_test_base() {
+    docker run --rm ${PLATFORM_ARGS[@]+"${PLATFORM_ARGS[@]}"} --entrypoint sh "$1" -c '
+        BIN=target/release/chapaty-template
+        SIZE=$(stat -c %s "$BIN")
+        echo "$BIN is $SIZE bytes"
+        if [ "$SIZE" -lt 5000000 ]; then
+            echo "The binary is only $SIZE bytes, so it is the empty placeholder." >&2
+            exit 1
+        fi
+        OUTPUT=$(timeout 60 "$BIN" 2>&1 || true)
+        echo "$OUTPUT" | head -n 5
+        echo "$OUTPUT" | grep -q "Loading environment" || {
+            echo "The binary did not print its startup line, so it is not the real program." >&2
+            exit 1
+        }
+    '
+}
+
+# The agent image is distroless and has no shell, so the only thing to run is
+# its entrypoint, which is the program itself.
+smoke_test_agent() {
+    local output limit=()
+    # macOS has no timeout command unless coreutils is installed, so it is only
+    # used when present.
+    if command -v timeout > /dev/null 2>&1; then
+        limit=(timeout 60)
+    fi
+    output="$(${limit[@]+"${limit[@]}"} docker run --rm ${PLATFORM_ARGS[@]+"${PLATFORM_ARGS[@]}"} "$1" 2>&1 || true)"
+    echo "$output" | head -n 5
+    if ! echo "$output" | grep -q "Loading environment"; then
+        echo "The agent image did not print its startup line, so it is not the real program." >&2
+        return 1
+    fi
+}
+
+# ==============================================================================
 # base
 # ==============================================================================
 
@@ -136,6 +188,9 @@ if [ "$TARGET" = "base" ] || [ "$TARGET" = "all" ]; then
         -t "$BASE_IMAGE" \
         .
     echo -e "${GREEN}[OK] base image built.${NC}"
+    echo -e "${YELLOW}[base] Smoke testing the binary ...${NC}"
+    smoke_test_base "$BASE_IMAGE" || { echo -e "${RED}[FAIL] base image smoke test failed.${NC}"; exit 1; }
+    echo -e "${GREEN}[OK] base image carries the real program.${NC}"
     BUILT+=("$BASE_IMAGE")
 fi
 
@@ -170,6 +225,9 @@ if [ "$TARGET" = "agent" ] || [ "$TARGET" = "all" ]; then
         -t "$AGENT_IMAGE" \
         "$AGENT_CONTEXT"
     echo -e "${GREEN}[OK] agent image built.${NC}"
+    echo -e "${YELLOW}[agent] Smoke testing the binary ...${NC}"
+    smoke_test_agent "$AGENT_IMAGE" || { echo -e "${RED}[FAIL] agent image smoke test failed.${NC}"; exit 1; }
+    echo -e "${GREEN}[OK] agent image carries the real program.${NC}"
     BUILT+=("$AGENT_IMAGE")
 fi
 

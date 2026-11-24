@@ -170,16 +170,63 @@ jobs:
       # than inherited from whatever the runner happens to be.
       - uses: docker/setup-buildx-action@v4
 
+      # The GitHub Actions cache is used here because this build compiles the
+      # whole dependency tree, so a rebuild triggered by a toolchain change
+      # rather than a dependency change should not start again from nothing.
+      #
+      # The image is built and loaded into the local docker first, and only
+      # pushed after the smoke check below has passed. Both steps use the same
+      # cache, so the second build finds every layer already built and only
+      # pushes. A broken image therefore never reaches the registry.
+      - name: Build the base image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: deploy/docker/Dockerfile.base
+          platforms: linux/amd64
+          load: true
+          tags: btrun-base:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # Nothing else in this repository ever executes the binary that this image
+      # carries, which is how images 1.4.1 and 1.4.2 were published holding an
+      # empty placeholder binary while every check stayed green. Rust 1.100
+      # changed the layout of the target directory, cargo then considered the
+      # placeholder build up to date, and the real program was never compiled.
+      #
+      # So this step looks at the result. The real binary is well over a hundred
+      # megabytes and the placeholder is a few hundred kilobytes. It is then
+      # started without any configuration. The real program prints a first line
+      # before it does anything else, and the placeholder prints nothing. The
+      # program is expected to fail afterwards because there is no data source
+      # and no credentials here, so its exit code is deliberately ignored and
+      # only the output is checked. The timeout stops a program that unexpectedly
+      # keeps running from hanging the job.
+      - name: Smoke test the base image
+        run: |
+          docker run --rm --entrypoint sh btrun-base:smoke -c '
+            BIN=target/release/chapaty-template
+            SIZE=$(stat -c %s "$BIN")
+            echo "$BIN is $SIZE bytes"
+            if [ "$SIZE" -lt 5000000 ]; then
+              echo "::error::The binary is only $SIZE bytes. This is the empty placeholder and not the real program."
+              exit 1
+            fi
+            OUTPUT=$(timeout 60 "$BIN" 2>&1 || true)
+            echo "$OUTPUT" | head -n 5
+            if ! echo "$OUTPUT" | grep -q "Loading environment"; then
+              echo "::error::The binary did not print its startup line, so it is not the real program."
+              exit 1
+            fi
+          '
+
       # The image name has to be exactly this. The pipeline builds it by joining
       # the registry prefix with the suffix -base, so a different name here
       # means Cloud Build looks for an image that was never pushed.
       #
       # The latest tag is published as a convenience only.
-      #
-      # The GitHub Actions cache is used here because this build compiles the
-      # whole dependency tree, so a rebuild triggered by a toolchain change
-      # rather than a dependency change should not start again from nothing.
-      - name: Build and push the base image
+      - name: Push the base image
         id: build
         uses: docker/build-push-action@v7
         with:
