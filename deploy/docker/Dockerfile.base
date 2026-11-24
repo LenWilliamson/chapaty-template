@@ -47,17 +47,29 @@ COPY .cargo/config.toml .cargo/config.toml
 # nothing is enough, because cargo compiles every crate in the dependency graph
 # whether or not the source happens to use it.
 #
-# The artifacts belonging to chapaty-template itself are deleted afterwards.
+# The artifacts belonging to chapaty-template itself are removed afterwards.
 # They were built from the placeholder rather than from real code, and leaving
-# them behind would let cargo reuse a stale fingerprint for the real build.
+# them behind would let cargo treat the placeholder build as up to date. The
+# final build below would then finish in a fraction of a second without
+# compiling anything, and the image would ship the empty placeholder binary
+# instead of the real program. Every hosted run would then exit with code 0,
+# print nothing and write no result files.
+#
+# This is done with cargo clean -p rather than by deleting paths by hand. The
+# layout of the target directory is not a stable interface. Rust 1.100 moved the
+# fingerprints of a package out of target/release/.fingerprint and into
+# target/release/build/<package>/<hash>/fingerprint, and a hand written list of
+# paths to delete silently stopped matching. Released images 1.4.1 and 1.4.2
+# were published broken because of exactly that. Asking cargo to clean one
+# package keeps working whatever the layout is, and it leaves every dependency
+# compiled, because only the artifacts of that one package are removed.
+#
+# The name after -p is the package name in Cargo.toml and has to match it.
 RUN mkdir -p src \
     && echo 'fn main() {}' > src/main.rs \
     && cargo build --release --locked \
-    && rm -rf src \
-        target/release/chapaty-template \
-        target/release/chapaty-template.d \
-        target/release/deps/chapaty_template* \
-        target/release/.fingerprint/chapaty-template-*
+    && cargo clean -p chapaty-template --release \
+    && rm -rf src
 
 # Now the real sources are copied. This layer is invalidated by any change under
 # src, which is fine, because the slow dependency build above is already cached
@@ -83,6 +95,22 @@ COPY src ./src
 # not the machine that runs the job, so tuning for the builder CPU would produce
 # a binary that can crash with an illegal instruction on Cloud Run.
 RUN cargo build --release --locked
+
+# A guard against shipping the placeholder. The real binary is well over a
+# hundred megabytes and the placeholder is a few hundred kilobytes, so a floor of
+# five megabytes separates them with a very wide margin. Without this check an
+# image holding the placeholder builds, passes CI and publishes without any
+# complaint, because nothing else in the pipeline ever executes the binary.
+#
+# The base image build log should also show a Compiling chapaty-template line
+# for the build above. A run of well under a second with no such line means
+# cargo skipped the compile.
+RUN size="$(stat -c %s target/release/chapaty-template)" \
+    && echo "target/release/chapaty-template is ${size} bytes" \
+    && if [ "${size}" -lt 5000000 ]; then \
+        echo "ERROR: the binary is only ${size} bytes, so this is the empty placeholder and not the real program." >&2; \
+        exit 1; \
+    fi
 
 # There is deliberately no ENTRYPOINT. This image is a build environment, it is
 # never deployed on its own.
